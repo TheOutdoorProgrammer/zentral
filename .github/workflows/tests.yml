@@ -17,6 +17,15 @@ jobs:
   community:
     runs-on: ubuntu-latest
     services:
+      rabbitmq:
+        image: rabbitmq:4.4.0
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
       postgres:
         image: postgres:18
         env:
@@ -47,6 +56,16 @@ jobs:
             tests.server_accounts.test_community_oidc \
             tests.server_accounts.test_auth_backend \
             tests.server_base.test_telemetry
+      - name: Verify control queues and task execution against RabbitMQ
+        run: |
+          docker run --rm --network host --entrypoint python \
+            -v "$PWD/tests:/zentral/tests:ro" \
+            -e ZENTRAL_CONF_DIR=/zentral/tests/community_conf \
+            -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432 -e POSTGRES_USER=zentral_test \
+            -e CELERY_BROKER_URL=amqp://127.0.0.1:5672// \
+            -e ZENTRAL_POLICIES_SYNC=0 -e ZENTRAL_PROBES_SYNC=0 \
+            -e ZENTRAL_STORES_SYNC=0 -e ZENTRAL_QUIET=1 \
+            zentral-community:test tests/community_worker_smoke.py
       - name: Verify browser privacy filtering
         run: |
           npm ci

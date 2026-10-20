@@ -18,6 +18,12 @@ EVENTS = frozenset(("http.request", "database.query", "http.client", "job.run", 
 OUTCOMES = frozenset(("success", "failure", "denied"))
 METHODS = frozenset(("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"))
 SQL_OPERATIONS = frozenset(("SELECT", "INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT"))
+ERROR_TYPES = frozenset((
+    "AccessRefused", "AttributeError", "ConnectionError", "DataError", "DatabaseError", "ImportError",
+    "IntegrityError", "InternalError", "KeyError", "ModuleNotFoundError", "NotFound", "NotImplementedError",
+    "OperationalError", "PermissionError", "PreconditionFailed", "RestartFreqExceeded", "RuntimeError",
+    "TimeoutError", "TypeError", "ValueError",
+))
 propagator = CompositePropagator((TraceContextTextMapPropagator(), W3CBaggagePropagator()))
 logger = logging.getLogger("zentral.telemetry")
 _provider = None
@@ -53,6 +59,10 @@ def configure(**kwargs):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+    if _pid is not None and _pid != os.getpid():
+        for inherited in (_provider, _log_provider):
+            if inherited is not None:
+                inherited.shutdown()
     # A private provider prevents third-party SDKs from exporting their raw URLs and attributes.
     _provider = TracerProvider(resource=Resource(resource_attributes()))
     _provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(timeout=5)))
@@ -79,7 +89,12 @@ def tracer():
     return trace.NoOpTracer()
 
 
-def event(name, outcome="success"):
+def error_type(error):
+    name = type(error).__name__
+    return name if name in ERROR_TYPES else "Exception"
+
+
+def event(name, outcome="success", error=None):
     if name not in EVENTS or outcome not in OUTCOMES:
         raise ValueError("Unknown telemetry event or outcome")
     if not enabled():
@@ -88,8 +103,12 @@ def event(name, outcome="success"):
     span.add_event(name, {"outcome": outcome})
     if outcome == "failure":
         span.set_status(trace.StatusCode.ERROR)
+    extra = {"telemetry_event": name, "telemetry_outcome": outcome}
+    if error is not None:
+        extra["telemetry_error_type"] = error_type(error)
+        span.set_attribute("error.type", extra["telemetry_error_type"])
     logger.log(logging.ERROR if outcome == "failure" else logging.INFO, name,
-               extra={"telemetry_event": name, "telemetry_outcome": outcome})
+               extra=extra)
 
 
 class SafeJsonFormatter(logging.Formatter):
@@ -108,6 +127,11 @@ class SafeJsonFormatter(logging.Formatter):
         }
         prefix = record.name.split(".", 1)[0]
         result["source"] = prefix if prefix in ("opentelemetry", "django", "celery", "gunicorn", "zentral") else "app"
+        if record.exc_info and record.exc_info[1] is not None:
+            result["error.type"] = error_type(record.exc_info[1])
+        elif getattr(record, "telemetry_error_type", None):
+            supplied = record.telemetry_error_type
+            result["error.type"] = supplied if supplied in ERROR_TYPES else "Exception"
         if span.is_valid:
             result.update(trace_id=f"{span.trace_id:032x}", span_id=f"{span.span_id:016x}")
         # Never format arbitrary messages, exception details, args, or extras from upstream.
@@ -122,6 +146,10 @@ class SafeOTLPHandler(logging.Handler):
         safe = json.loads(SafeJsonFormatter().format(record))
         if record.levelno >= logging.ERROR:
             trace.get_current_span().set_status(trace.StatusCode.ERROR)
+        attributes = {"outcome": safe["outcome"], "source": safe["source"]}
+        if "error.type" in safe:
+            attributes["error.type"] = safe["error.type"]
+            trace.get_current_span().set_attribute("error.type", safe["error.type"])
         severity = (SeverityNumber.ERROR if record.levelno >= logging.ERROR else
                     SeverityNumber.WARN if record.levelno >= logging.WARNING else SeverityNumber.INFO)
         _log_provider.get_logger("zentral.telemetry").emit(LogRecord(
@@ -130,7 +158,7 @@ class SafeOTLPHandler(logging.Handler):
             severity_number=severity,
             severity_text=severity.name,
             body=safe["event"],
-            attributes={"outcome": safe["outcome"], "source": safe["source"]},
+            attributes=attributes,
         ))
 
 
@@ -142,9 +170,9 @@ def operation(name, kind=trace.SpanKind.INTERNAL, attributes=None, parent=None):
     ) as span:
         try:
             yield span
-        except Exception:
+        except Exception as error:
             span.set_status(trace.StatusCode.ERROR)
-            event(name, "failure")
+            event(name, "failure", error=error)
             raise
 
 
@@ -333,6 +361,7 @@ def connect_celery():
         (signals.before_task_publish, celery_publish),
         (signals.task_prerun, celery_start),
         (signals.task_postrun, celery_end),
+        (signals.worker_init, configure),
         (signals.worker_process_init, configure),
         (signals.worker_process_shutdown, shutdown),
         (signals.worker_shutdown, shutdown),

@@ -197,6 +197,24 @@ class TelemetryTests(TestCase):
         self.assertNotIn("secret", json.dumps(self.exported()))
         self.assertNotIn("private", json.dumps(self.exported()))
 
+    def test_worker_process_replaces_inherited_exporters(self):
+        from django import db
+        inherited_traces, inherited_logs = Mock(), Mock()
+        with (
+            patch.object(telemetry, "_pid", -1),
+            patch.object(telemetry, "_provider", inherited_traces),
+            patch.object(telemetry, "_log_provider", inherited_logs),
+            patch.object(telemetry, "instrument_http"),
+            patch.object(telemetry, "instrument_queue"),
+            patch.object(db, "connections") as connections,
+        ):
+            connections.all.return_value = []
+            telemetry.configure()
+            inherited_traces.shutdown.assert_called_once()
+            inherited_logs.shutdown.assert_called_once()
+            self.assertEqual(telemetry._pid, os.getpid())
+            telemetry.shutdown()
+
     def test_unknown_events_cannot_leak_values(self):
         with self.assertRaises(ValueError):
             telemetry.event("user@example.com")
@@ -222,9 +240,23 @@ class TelemetryTests(TestCase):
                 self.assertEqual(log.span_id, span.get_span_context().span_id)
         self.assertEqual(len(exporter.get_finished_logs()), 1)
         self.assertEqual(log.body, "application.log")
-        self.assertEqual(dict(log.attributes), {"source": "celery", "outcome": "failure"})
+        self.assertEqual(dict(log.attributes),
+                         {"source": "celery", "outcome": "failure", "error.type": "ValueError"})
         provider.shutdown()
 
+    def test_exception_types_are_bounded_without_messages(self):
+        private_type = type("private_identity", (Exception,), {})
+        for error, expected in ((PermissionError("private credential"), "PermissionError"),
+                                (private_type("private credential"), "Exception")):
+            with self.subTest(expected=expected):
+                with telemetry.operation("http.request") as span:
+                    telemetry.event("oidc.login", "failure", error=error)
+                    self.assertEqual(span.attributes["error.type"], expected)
+                record = logging.LogRecord("app", logging.ERROR, "/private", 1, "private", (),
+                                           (type(error), error, None))
+                rendered = telemetry.SafeJsonFormatter().format(record)
+                self.assertEqual(json.loads(rendered)["error.type"], expected)
+                self.assertNotIn("private", rendered)
     def test_no_endpoint_disables_events(self):
         with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": ""}):
             with patch.object(telemetry.logger, "log") as log:
@@ -235,3 +267,5 @@ class TelemetryTests(TestCase):
         from celery import signals
         telemetry.connect_celery()
         self.assertIn(telemetry.celery_start, signals.task_prerun._live_receivers(None))
+        self.assertIn(telemetry.configure, signals.worker_init._live_receivers(None))
+        self.assertIn(telemetry.configure, signals.worker_process_init._live_receivers(None))

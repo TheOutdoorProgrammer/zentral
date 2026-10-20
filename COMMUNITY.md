@@ -42,11 +42,15 @@ docker build --build-arg APP_ENV=community --build-arg APP_VERSION="$(git rev-pa
 
 Migrate before starting the application. Provision configured event stores after their dependencies become healthy. The upstream deployment configuration remains necessary for PostgreSQL, queues, stores and enabled modules.
 
+The community runtime uses Celery 5.6 with exclusive control and event queues, because RabbitMQ 4.3 and later reject transient, nonexclusive queues by default. CI also runs `tests/community_worker_smoke.py` against RabbitMQ 4.4: it starts a real worker, verifies a control reply, executes a task and checks its PostgreSQL result. HTTP readiness alone does not establish worker health.
+
 ## Observability
 
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` to a private OTLP HTTP/protobuf receiver, `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES` containing `service.version` and `deployment.environment.name`. Supply any OTLP authorization header through secrets, never browser configuration. `OTEL_PROPAGATION_HOSTS` is an exact host allowlist for outgoing W3C context propagation.
 
 Set `FARO_COLLECTOR_URL` to a Faro application collector URL with an explicit production origin allowlist. The browser bundle uses `@nerdswhofish/browser-telemetry`. Application telemetry exports bounded request routes, operations, outcomes and trace correlation, excluding raw messages, exception details, request contents, SQL, account identities and authentication tokens. Unfiltered sidecar logs must not be forwarded as application logs.
+
+Failures include an allowlisted exception category in `error.type`, without messages, arguments or local variables. Celery parent and child processes both initialize exporters, so consumer connection failures remain visible even before a task starts.
 
 ## Deployment scope
 

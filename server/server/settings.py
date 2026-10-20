@@ -248,6 +248,9 @@ FORMS_URLFIELD_ASSUME_HTTPS = True
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_BROKER_URL = django_zentral_settings.get("CELERY_BROKER_URL", "amqp://guest:guest@rabbitmq:5672//")
 CELERY_BROKER_TRANSPORT_OPTIONS = django_zentral_settings.get("CELERY_BROKER_TRANSPORT_OPTIONS", {})
+# RabbitMQ 4.3+ rejects transient queues shared by multiple connections.
+CELERY_CONTROL_QUEUE_EXCLUSIVE = True
+CELERY_EVENT_QUEUE_EXCLUSIVE = True
 
 # Opt out of django-celery-results' deprecated id-first URL patterns.
 # We don't include their URLs anywhere, so this only silences a DeprecationWarning.
