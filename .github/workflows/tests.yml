@@ -67,6 +67,20 @@ jobs:
             -e ZENTRAL_POLICIES_SYNC=0 -e ZENTRAL_PROBES_SYNC=0 \
             -e ZENTRAL_STORES_SYNC=0 -e ZENTRAL_QUIET=1 \
             zentral-community:test tests/community_worker_smoke.py
+      - name: Verify community MDM authentication and push workers
+        run: |
+          docker run --rm --network host --entrypoint python \
+            -v "$PWD/tests:/zentral/tests:ro" \
+            -v "$PWD/conf/start/docker/tls:/zentral/conf/start/docker/tls:ro" \
+            -e ZENTRAL_CONF_DIR=/zentral/tests/community_mdm_conf \
+            -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432 -e POSTGRES_USER=zentral_test \
+            -e POSTGRES_NAME=zentral_mdm_test \
+            -e ZENTRAL_FORCE_ES_OS_INDEX_REFRESH=1 \
+            -e ZENTRAL_POLICIES_SYNC=0 -e ZENTRAL_PROBES_SYNC=0 \
+            -e ZENTRAL_STORES_SYNC=0 -e ZENTRAL_QUIET=1 \
+            zentral-community:test server/manage.py test \
+            tests.mdm.test_crypto tests.mdm.test_mdm_views tests.mdm.test_ota_enrollment \
+            tests.mdm.test_apns tests.mdm.test_workers tests.mdm.test_apns_telemetry
       - name: Verify browser privacy filtering
         run: |
           npm ci

@@ -19,6 +19,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils.crypto import get_random_string
+from OpenSSL import crypto
 from realms.models import RealmGroup, RealmUserGroupMembership
 
 from zentral.contrib.inventory.models import MachineTag, MetaBusinessUnit, Tag
@@ -220,6 +221,11 @@ class MDMViewsTestCase(TestCase):
                 sig["content_type"] = "signed_data"
                 sig["content"] = sd
                 kwargs["HTTP_MDM_SIGNATURE"] = base64.b64encode(sig.dump())
+                # This fixture is its own explicit trust anchor; production uses the SCEP CA chain.
+                store = crypto.X509Store()
+                store.add_cert(crypto.load_certificate(crypto.FILETYPE_ASN1, cert.dump()))
+                with patch("zentral.contrib.mdm.crypto.SCEP_CA_STORE", store):
+                    return method(url, **kwargs)
         return method(url, **kwargs)
 
     def _put(

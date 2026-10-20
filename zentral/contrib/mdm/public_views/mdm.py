@@ -19,7 +19,7 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 from django.views.generic import View
 
-from zentral.conf import api_base_url
+from zentral.conf import api_base_url, settings
 from zentral.contrib.inventory.models import MetaBusinessUnit
 from zentral.contrib.inventory.utils import add_machine_tags
 from zentral.contrib.mdm.apps_books import ensure_target_asset_assignments
@@ -34,6 +34,7 @@ from zentral.contrib.mdm.commands.scheduling import get_next_command_response
 from zentral.contrib.mdm.crypto import (
     build_enrolled_device_cert_defaults,
     verify_signed_payload,
+    verify_zentral_scep_ca_issuer,
 )
 from zentral.contrib.mdm.declarations import (
     DeclarationError,
@@ -102,19 +103,29 @@ class MDMView(PostEventMixin, View):
         header_signature = request.META.get("HTTP_MDM_SIGNATURE")
         if header_signature:
             try:
-                certs, raw_payload = verify_signed_payload(request.body, base64.b64decode(header_signature))
+                certs, raw_payload = verify_signed_payload(
+                    request.body, base64.b64decode(header_signature, validate=True))
+                if len(certs) != 1 or not verify_zentral_scep_ca_issuer(certs[0][1]):
+                    raise ValueError("Untrusted signer")
+                self.certificate = certs[0][2]
+                subject = self.certificate.subject
+                common_names = subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+                organizations = subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+                serial_numbers = subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
+                if len(common_names) != 1 or len(organizations) != 1 or len(serial_numbers) > 1:
+                    raise ValueError("Ambiguous certificate identity")
+                cert_cn = common_names[0].value
+                cert_o = organizations[0].value
+                self.serial_number = serial_numbers[0].value if serial_numbers else None
             except Exception:
                 self.abort("Invalid header signature")
             try:
                 self.payload = plistlib.loads(raw_payload)
             except plistlib.InvalidFileException:
                 self.payload = {}
-            _, _, self.certificate = certs[0]
-            subject = self.certificate.subject
-            cert_cn = subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
-            cert_o = subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value
-            self.serial_number = subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)[0].value
         else:
+            if not settings["apps"]["zentral.contrib.mdm"].get("mtls_proxy", True):
+                self.abort("Missing header signature")
             # mTLS with certificate subject in header
             # DN => serial_number + meta_business_unit
             dn = request.META.get("HTTP_X_SSL_CLIENT_S_DN")
@@ -128,6 +139,9 @@ class MDMView(PostEventMixin, View):
             cert_cn = dn_d.get("CN")
             cert_o = dn_d.get("O")
             self.serial_number = dn_d.get("serialNumber")
+
+        if not isinstance(self.payload, dict):
+            self.abort("Invalid request payload")
 
         # CN info
         try:

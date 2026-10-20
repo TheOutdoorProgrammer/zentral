@@ -1,14 +1,19 @@
 {
   "api": {
-    "fqdn": "testserver"
+    "fqdn": "zentral",
+    "tls_hostname": "https://zentral",
+    "tls_hostname_for_client_cert_auth": "https://zentral-mtls",
+    "tls_fullchain": "{{ file:conf/start/docker/tls/zentral_fullchain.crt }}",
+    "tls_privkey": "{{ file:conf/start/docker/tls/zentral.key }}"
   },
   "django": {
     "SECRET_KEY": "community-tests-only-not-for-production",
-    "ALLOWED_HOSTS": ["testserver"],
+    "ALLOWED_HOSTS": ["testserver", "zentral", "zentral-mtls"],
     "POSTGRES_HOST": "{{ env:POSTGRES_HOST }}",
     "POSTGRES_PORT": "{{ env:POSTGRES_PORT }}",
     "POSTGRES_USER": "{{ env:POSTGRES_USER }}",
     "POSTGRES_NAME": "{{ env:POSTGRES_NAME }}",
+    "MEDIA_ROOT": "/tmp/zentral-community-mdm-tests",
     "STORAGES": {
       "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"

@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 import os
 import subprocess
 from tempfile import NamedTemporaryFile
@@ -97,18 +98,26 @@ def get_cryptography_hash_algorithm(signer):
 
 def verify_certificate_signature(certificate, signer, payload):
     signature = signer['signature'].native
+    hash_algorithm = get_cryptography_hash_algorithm(signer)
     if "signed_attrs" in signer and signer["signed_attrs"]:
-        # Seen with the iPhone simulator for example
+        attributes = signer["signed_attrs"]
+        digests = [a["values"].native for a in attributes if a["type"].native == "message_digest"]
+        content_types = [a["values"].native for a in attributes if a["type"].native == "content_type"]
+        digest = hashes.Hash(hash_algorithm())
+        digest.update(payload)
+        # RFC 5652 section 5.4: signing attributes alone does not authenticate the payload.
+        if (len(digests) != 1 or len(digests[0]) != 1
+                or content_types != [["data"]]
+                or not hmac.compare_digest(digests[0][0], digest.finalize())):
+            return False
         signed_string = signer["signed_attrs"].dump()
         if signed_string.startswith(b'\xa0'):
-            # TODO: WTF!!!
-            # see https://stackoverflow.com/questions/24567623/how-to-see-what-attributes-are-signed-inside-pkcs7#24581628  # NOQA
+            # RFC 5652 section 5.4 signs the SET OF encoding, without the implicit tag.
             signed_string = b'\x31' + signed_string[1:]
     else:
         signed_string = payload
     public_key = certificate.public_key()
     signature_algo = signer["signature_algorithm"].signature_algo
-    hash_algorithm = get_cryptography_hash_algorithm(signer)
     if signature_algo == "rsassa_pkcs1v15":
         try:
             public_key.verify(signature, signed_string,
@@ -127,18 +136,27 @@ def verify_certificate_signature(certificate, signer, payload):
 
 
 def verify_signed_payload(payload, detached_signature=None):
-    if detached_signature:
-        content_info = cms.ContentInfo.load(detached_signature)
+    if detached_signature is not None:
+        content_info = cms.ContentInfo.load(detached_signature, strict=True)
     else:
-        content_info = cms.ContentInfo.load(payload)
+        content_info = cms.ContentInfo.load(payload, strict=True)
     if content_info["content_type"].native != "signed_data":
         raise ValueError("Not signed data")
     content = content_info["content"]
-    if not detached_signature:
+    if content["encap_content_info"]["content_type"].native != "data":
+        raise ValueError("Unsupported content type")
+    if detached_signature is None:
         payload = content['encap_content_info']['content'].native
+    elif content["encap_content_info"]["content"].native is not None:
+        raise ValueError("Expected detached signature")
+    if not isinstance(payload, bytes) or not content["signer_infos"]:
+        raise ValueError("Missing payload or signer")
     certificates = []
     for signer in content["signer_infos"]:
-        certificate_i, certificate_bytes, certificate = get_signer_certificate(content, signer)
+        signer_certificate = get_signer_certificate(content, signer)
+        if signer_certificate is None:
+            raise ValueError("Missing signer certificate")
+        certificate_i, certificate_bytes, certificate = signer_certificate
         if not verify_certificate_signature(certificate, signer, payload):
             raise ValueError("Invalid signature")
         certificates.append((certificate_i, certificate_bytes, certificate))
