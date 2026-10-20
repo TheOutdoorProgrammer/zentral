@@ -4,6 +4,7 @@ import time
 import threading
 from django.utils.functional import SimpleLazyObject
 import httpx
+from zentral import telemetry
 from zentral.utils.ssl import create_client_ssl_context
 from .events import build_mdm_device_notification_event
 from .models import PushCertificate
@@ -41,11 +42,15 @@ class APNSClient:
         )
 
     def send_notification(self, token, push_magic, priority=10, expiration_seconds=3600):
+        with telemetry.operation("job.run", attributes={"messaging.system": "apns"}) as span:
+            span.update_name("mdm.apns.notification")
+            success, error = self._send_notification(token, push_magic, priority, expiration_seconds, span)
+            telemetry.event("job.run", "success" if success else "failure", error=error if not success else None)
+            return success
+
+    def _send_notification(self, token, push_magic, priority, expiration_seconds, span):
         if isinstance(token, (bytes, memoryview)):
             token = token.hex()
-
-        log_tmpl = "Notify topic %s, device %s, priority %d, expiration %ds"
-        logger.debug(log_tmpl, self.topic, token, priority, expiration_seconds)
 
         url = f"/3/device/{token}"
         payload = {"mdm": push_magic}
@@ -55,28 +60,32 @@ class APNSClient:
                    "apns-topic": self.topic}
 
         success = False
+        last_error = None
 
         for retry_num in range(self.max_retries + 1):
             try:
                 r = self.client.post(url, json=payload, headers=headers)
-            except Exception:
-                logger.exception(f"{log_tmpl}: error", self.topic, token, priority, expiration_seconds)
+            except Exception as error:
+                if isinstance(error, httpx.TimeoutException):
+                    last_error = TimeoutError()
+                elif isinstance(error, httpx.NetworkError):
+                    last_error = ConnectionError()
+                else:
+                    last_error = error
             else:
+                last_error = None
+                span.set_attribute("http.response.status_code", r.status_code)
                 if r.status_code == httpx.codes.OK:
-                    logger.debug(f"{log_tmpl}: OK", self.topic, token, priority, expiration_seconds)
                     success = True
                     break
-                logger.error(f"{log_tmpl}: status %d", self.topic, token, priority, expiration_seconds, r.status_code)
                 if r.status_code < 500:
                     # only retry 500s
                     break
             sleep_time = random.random() * 2 ** retry_num
-            logger.warning(f"{log_tmpl}: sleep %.2f seconds before retry %s of %s.",
-                           self.topic, token, priority, expiration_seconds,
-                           sleep_time, retry_num, self.max_retries)
+            logger.warning("APNs request retry")
             time.sleep(sleep_time)
 
-        return success
+        return success, last_error
 
 
 # client cache
@@ -96,7 +105,7 @@ class APNSClientCache:
                     try:
                         push_cert = PushCertificate.objects.get(topic=topic)
                     except PushCertificate.DoesNotExist:
-                        logger.warning("Could not find push certificate with topic %s", topic)
+                        logger.warning("APNs push certificate unavailable")
                         return
                 client = APNSClient.from_push_certificate(push_cert)
                 self._clients[topic] = client
@@ -114,10 +123,8 @@ apns_client_cache = SimpleLazyObject(lambda: APNSClientCache())
 
 def _send_target_notification(enrolled_device, token, user_id=None, priority=10, expiration_seconds=3600,
                               request=None):
-    target_type = "device" if user_id is None else "user"
-    target_pk = enrolled_device.pk if user_id is None else user_id
     if not enrolled_device.can_be_poked() or not token:
-        logger.error("Enrolled %s %s cannot be poked.", target_type, target_pk)
+        logger.error("APNs target unavailable")
         return False, None
     client = apns_client_cache.get_or_create_with_push_cert(enrolled_device.push_certificate)
     success = client.send_notification(token, enrolled_device.push_magic, priority, expiration_seconds)

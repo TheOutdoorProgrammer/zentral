@@ -1,5 +1,6 @@
 from datetime import timedelta
 from unittest.mock import patch, Mock
+from django.db import connection
 from django.test import TestCase
 from django.utils.crypto import get_random_string
 from zentral.conf import ConfigDict
@@ -13,6 +14,10 @@ from .utils import force_dep_enrollment_session, force_enrolled_user, force_push
 class MDMWorkersTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
+        # The acquisition query uses transaction time, which stays fixed across this TestCase.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC' - INTERVAL '6 seconds'")
+            cls.target_created_at = cursor.fetchone()[0]
         cls.mbu = MetaBusinessUnit.objects.create(name=get_random_string(12))
         cls.mbu.create_enrollment_business_unit()
         cls.push_certificate = force_push_certificate(with_material=True, reduced_key_size=False)
@@ -309,7 +314,7 @@ class MDMWorkersTestCase(TestCase):
         )
         enrolled_device = session.enrolled_device
         self.assertIsNone(enrolled_device.last_notified_at)
-        enrolled_device.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_device.created_at = self.target_created_at
         enrolled_device.save()
         w = DevicesAPNSWorker()
         w.run(only_once=True)
@@ -327,7 +332,7 @@ class MDMWorkersTestCase(TestCase):
         )
         enrolled_device = session.enrolled_device
         self.assertIsNone(enrolled_device.last_notified_at)
-        enrolled_device.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_device.created_at = self.target_created_at
         enrolled_device.save()
         w = DevicesAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)
@@ -371,7 +376,7 @@ class MDMWorkersTestCase(TestCase):
         )
         enrolled_device = session.enrolled_device
         self.assertIsNone(enrolled_device.last_notified_at)
-        enrolled_device.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_device.created_at = self.target_created_at
         enrolled_device.save()
         w = DevicesAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)
@@ -458,7 +463,7 @@ class MDMWorkersTestCase(TestCase):
         )
         enrolled_device = session.enrolled_device
         self.assertIsNone(enrolled_device.last_notified_at)
-        enrolled_device.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_device.created_at = self.target_created_at
         enrolled_device.save()
         w = DevicesAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)
@@ -510,7 +515,7 @@ class MDMWorkersTestCase(TestCase):
         )
         enrolled_user = force_enrolled_user(session.enrolled_device)
         self.assertIsNone(enrolled_user.last_notified_at)
-        enrolled_user.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_user.created_at = self.target_created_at
         enrolled_user.save()
         w = UsersAPNSWorker()
         w.run(only_once=True)
@@ -529,7 +534,7 @@ class MDMWorkersTestCase(TestCase):
         enrolled_device = session.enrolled_device
         enrolled_user = force_enrolled_user(enrolled_device)
         self.assertIsNone(enrolled_user.last_notified_at)
-        enrolled_user.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_user.created_at = self.target_created_at
         enrolled_user.save()
         w = UsersAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)
@@ -575,7 +580,7 @@ class MDMWorkersTestCase(TestCase):
         enrolled_device = session.enrolled_device
         enrolled_user = force_enrolled_user(enrolled_device)
         self.assertIsNone(enrolled_user.last_notified_at)
-        enrolled_user.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_user.created_at = self.target_created_at
         enrolled_user.save()
         w = UsersAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)
@@ -666,7 +671,7 @@ class MDMWorkersTestCase(TestCase):
         enrolled_device = session.enrolled_device
         enrolled_user = force_enrolled_user(enrolled_device)
         self.assertIsNone(enrolled_user.last_notified_at)
-        enrolled_user.created_at -= timedelta(seconds=6)  # Old enough
+        enrolled_user.created_at = self.target_created_at
         enrolled_user.save()
         w = UsersAPNSWorker()
         w.run(metrics_exporter=metrics_exporter, only_once=True)

@@ -1,8 +1,13 @@
 import logging
+import signal
+import threading
+import time
 
 import psycopg2.extras
 from django.db import connection
+from opentelemetry import trace
 
+from zentral import telemetry
 from zentral.conf import settings
 from zentral.core.exceptions import ImproperlyConfigured
 from zentral.core.queues import queues
@@ -13,6 +18,11 @@ from .apns import apns_client_cache
 from .events import post_mdm_device_notification_event
 
 logger = logging.getLogger("zentral.contrib.mdm.workers")
+
+
+def _stop_worker(signum, frame):
+    # SIGTERM must unwind the worker so pending telemetry is flushed before process exit.
+    raise SystemExit(0)
 
 
 class BaseAPNSWorker:
@@ -113,10 +123,50 @@ class BaseAPNSWorker:
             )
 
     def run_once(self):
+        started = time.time_ns()
+        acquisition_error = None
+        try:
+            targets = self.acquire_next_targets()
+        except Exception as error:
+            targets = []
+            acquisition_error = error
+        acquired = time.time_ns()
+        if not targets and acquisition_error is None:
+            return
+
+        # Start after acquisition so idle polls export nothing, retaining the measured query duration.
+        with telemetry.tracer().start_as_current_span(
+            "mdm.apns.batch", start_time=started,
+            attributes={"messaging.system": "apns", "mdm.apns.target": self.target_type},
+            record_exception=False, set_status_on_exception=False,
+        ):
+            acquisition = telemetry.tracer().start_span(
+                "database.query", kind=trace.SpanKind.CLIENT, start_time=started,
+                attributes={"db.system.name": "postgresql", "db.operation.name": "UPDATE"},
+                record_exception=False, set_status_on_exception=False,
+            )
+            with trace.use_span(acquisition, end_on_exit=False,
+                                record_exception=False, set_status_on_exception=False):
+                if acquisition_error is not None:
+                    telemetry.event("database.query", "failure", error=acquisition_error)
+            acquisition.end(end_time=acquired)
+            try:
+                if acquisition_error is not None:
+                    raise acquisition_error
+                success = self.process_targets(targets)
+            except Exception as error:
+                telemetry.event("job.run", "failure", error=error)
+                raise
+            else:
+                telemetry.event("job.run", "success" if success else "failure")
+
+    def process_targets(self, targets):
         updates = []
-        for pk, a_id, serial_number, udid, token, push_magic, topic, not_after in self.acquire_next_targets():
+        all_succeeded = True
+        for pk, a_id, serial_number, udid, token, push_magic, topic, not_after in targets:
             client = apns_client_cache.get_or_create(topic, not_after)
             if not client:
+                all_succeeded = False
                 self.inc_counter("no_client")
                 updates.append((pk, a_id, serial_number, udid, None))
             else:
@@ -131,28 +181,42 @@ class BaseAPNSWorker:
                     self.inc_counter("success")
                     updates.append((pk, a_id, serial_number, udid, naive_utcnow()))
                 else:
+                    all_succeeded = False
                     self.inc_counter("failure")
                     updates.append((pk, a_id, serial_number, udid, None))
         self.process_target_updates(updates)
+        return all_succeeded
 
     def run(self, metrics_exporter=None, only_once=False):
-        self.metrics_exporter = metrics_exporter
-        if self.metrics_exporter:
-            self.metrics_exporter.start()
-            self.metrics_exporter.add_counter(self.counter_name, ["target", "status"])
-        exit_code = 0
-        while True:
-            # rate limit the DB queries
-            self.db_query_leaky_bucket.consume()
+        telemetry.configure()
+        previous_sigterm = None
+        if threading.current_thread() is threading.main_thread():
+            previous_sigterm = signal.signal(signal.SIGTERM, _stop_worker)
+        try:
+            self.metrics_exporter = metrics_exporter
+            if self.metrics_exporter:
+                self.metrics_exporter.start()
+                self.metrics_exporter.add_counter(self.counter_name, ["target", "status"])
+            exit_code = 0
+            while True:
+                self.db_query_leaky_bucket.consume()
+                try:
+                    self.run_once()
+                except Exception:
+                    logger.error("APNs worker failed")
+                    exit_code = 1
+                if exit_code or only_once:
+                    break
+            return exit_code
+        finally:
             try:
-                self.run_once()
-            except Exception:
-                logger.exception("Runtime error")
-                exit_code = 1
-            if exit_code or only_once:
-                break
-        queues.stop()
-        return exit_code
+                queues.stop()
+            finally:
+                try:
+                    telemetry.shutdown()
+                finally:
+                    if previous_sigterm is not None:
+                        signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 class DevicesAPNSWorker(BaseAPNSWorker):

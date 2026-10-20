@@ -62,7 +62,7 @@ class MDMAPNSTestCase(TestCase):
         )
         session.enrolled_device.token = None
         send_enrolled_device_notification(session.enrolled_device)
-        logger_error.assert_called_once_with("Enrolled %s %s cannot be poked.", "device", session.enrolled_device.pk)
+        logger_error.assert_called_once_with("APNs target unavailable")
 
     @patch("zentral.contrib.mdm.apns.logger.error")
     def test_apns_send_enrolled_user_notification_cannot_be_poked(self, logger_error):
@@ -72,7 +72,7 @@ class MDMAPNSTestCase(TestCase):
         session.enrolled_device.token = None
         enrolled_user = force_enrolled_user(session.enrolled_device)
         send_enrolled_user_notification(enrolled_user)
-        logger_error.assert_called_once_with("Enrolled %s %s cannot be poked.", "user", enrolled_user.user_id)
+        logger_error.assert_called_once_with("APNs target unavailable")
 
     @patch("zentral.contrib.mdm.apns.time.sleep")
     @patch("zentral.contrib.mdm.apns.httpx.Client.post")
