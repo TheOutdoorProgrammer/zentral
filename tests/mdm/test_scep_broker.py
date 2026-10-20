@@ -7,6 +7,9 @@ import hmac
 import json
 from io import StringIO
 import os
+from pathlib import Path
+import subprocess
+import sys
 from threading import Barrier
 from unittest.mock import patch
 
@@ -251,6 +254,27 @@ class SCEPChallengeTests(SecretEngineMixin, TestCase):
 
 
 class SCEPWebhookTests(SimpleTestCase):
+    def test_internal_wsgi_starts_with_complete_settings_in_fresh_process(self):
+        repository = Path(__file__).resolve().parents[2]
+        script = """
+import sys
+sys.path.insert(0, "server")
+import server.scep_wsgi
+from django.conf import settings
+from django.test import Client
+from server import settings as base_settings
+assert settings.INSTALLED_APPS == base_settings.INSTALLED_APPS
+assert settings.DATABASES == base_settings.DATABASES
+assert settings.SECRET_KEY == base_settings.SECRET_KEY
+assert settings.ROOT_URLCONF == "server.scep_urls"
+assert "django.contrib.auth.middleware.AuthenticationMiddleware" not in settings.MIDDLEWARE
+assert Client().get("/healthz/", HTTP_HOST="testserver").status_code == 200
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=repository, capture_output=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
     @patch.dict(os.environ, ENV)
     def test_signature_id_and_body_are_bound(self):
         body = json.dumps(payload("x" * 43, b"csr")).encode()
