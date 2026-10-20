@@ -40,6 +40,7 @@ type probe struct {
 	roots         *x509.CertPool
 	intermediates *x509.CertPool
 	certificates  []*x509.Certificate
+	recipients    []*x509.Certificate
 	key           *rsa.PrivateKey
 	signer        *x509.Certificate
 }
@@ -96,7 +97,7 @@ func (p *probe) message(commonName string) (*scep.PKIMessage, error) {
 		return nil, errors.New("CSR parsing failed")
 	}
 	msg, err := scep.NewCSRRequest(csr, &scep.PKIMessage{
-		MessageType: scep.PKCSReq, Recipients: p.certificates,
+		MessageType: scep.PKCSReq, Recipients: p.recipients,
 		SignerCert: p.signer, SignerKey: p.key,
 	})
 	if err != nil {
@@ -146,6 +147,23 @@ func (p *probe) exchange(msg *scep.PKIMessage, success bool) error {
 	return nil
 }
 
+func scepEncryptionRecipients(certificates []*x509.Certificate) ([]*x509.Certificate, error) {
+	var recipients []*x509.Certificate
+	canSign := false
+	for _, cert := range certificates {
+		canSign = canSign || cert.KeyUsage&x509.KeyUsageDigitalSignature != 0
+		if _, ok := cert.PublicKey.(*rsa.PublicKey); ok && cert.KeyUsage&x509.KeyUsageKeyEncipherment != 0 {
+			recipients = append(recipients, cert)
+		}
+	}
+	// Apple rejects GetCACert without both RA capabilities, even when the
+	// certificates can otherwise form a trusted CA chain.
+	if !canSign || len(recipients) == 0 {
+		return nil, errors.New("CA response lacks SCEP signing or RSA encryption key usage")
+	}
+	return recipients, nil
+}
+
 func run() error {
 	pkcs7.ContentEncryptionAlgorithm = pkcs7.EncryptionAlgorithmAES256CBC
 	if err := pkcs7.SetDefaultDigestAlgorithm(pkcs7.OIDDigestAlgorithmSHA256); err != nil {
@@ -193,6 +211,10 @@ func run() error {
 		}); err != nil {
 			return errors.New("CA response trust verification failed")
 		}
+	}
+	p.recipients, err = scepEncryptionRecipients(p.certificates)
+	if err != nil {
+		return err
 	}
 	p.key, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

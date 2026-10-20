@@ -85,6 +85,7 @@ jobs:
       - name: Build the manual SCEP integration probe
         working-directory: tests/scep_smoke
         run: |
+          go test ./...
           go vet ./...
           go build -o "$RUNNER_TEMP/zentral-scep-smoke" .
       - name: Verify browser privacy filtering
