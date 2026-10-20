@@ -18,8 +18,9 @@ MAX_MESSAGE = 128 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
 
 
-def _body(request, limit):
-    if request.content_type != "application/json":
+def _body(request, limit, allow_missing_content_type=False):
+    if (request.content_type != "application/json" and
+            not (allow_missing_content_type and not request.META.get("CONTENT_TYPE"))):
         raise InvalidChallenge()
     body = request.read(limit + 1)
     if len(body) > limit:
@@ -61,7 +62,8 @@ def authorize(request):
     with telemetry.operation(name):
         try:
             payload = verify_webhook(
-                _body(request, 65536),
+                # Smallstep v0.30.2 signs JSON bytes but omits Content-Type on webhook POSTs.
+                _body(request, 65536, allow_missing_content_type=True),
                 request.headers.get("X-Smallstep-Signature", ""),
                 request.headers.get("X-Smallstep-Webhook-ID", ""),
             )

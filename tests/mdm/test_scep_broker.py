@@ -252,8 +252,45 @@ class SCEPChallengeTests(SecretEngineMixin, TestCase):
         self.assertEqual(json.loads(response.content), {"allow": True})
         self.assertEqual(response["Cache-Control"], "no-store")
 
+    @patch.dict(os.environ, ENV)
+    def test_native_callback_without_content_type_is_authenticated_and_accepted(self):
+        body = json.dumps(payload(self.token, self.raw)).encode()
+        factory = RequestFactory()
+        request = factory.generic(
+            "POST", "/", body, content_type="",
+            HTTP_X_SMALLSTEP_SIGNATURE=signature(body),
+            HTTP_X_SMALLSTEP_WEBHOOK_ID=ENV["ZENTRAL_SCEP_WEBHOOK_ID"],
+        )
+        request.META.pop("CONTENT_TYPE", None)
+        self.assertEqual(authorize(request).status_code, 200)
+        self.assertEqual(SCEPChallenge.objects.get().csr_sha256, hashlib.sha256(self.raw).hexdigest())
+
+    @patch.dict(os.environ, ENV)
+    def test_callback_with_explicit_non_json_type_does_not_bind(self):
+        body = json.dumps(payload(self.token, self.raw)).encode()
+        request = RequestFactory().post(
+            "/", body, content_type="text/plain",
+            HTTP_X_SMALLSTEP_SIGNATURE=signature(body),
+            HTTP_X_SMALLSTEP_WEBHOOK_ID=ENV["ZENTRAL_SCEP_WEBHOOK_ID"],
+        )
+        self.assertEqual(authorize(request).status_code, 403)
+        self.assertIsNone(SCEPChallenge.objects.get().csr_sha256)
+
 
 class SCEPWebhookTests(SimpleTestCase):
+    @patch.dict(os.environ, ENV)
+    def test_missing_content_type_does_not_bypass_mint_type_or_webhook_authentication(self):
+        factory = RequestFactory()
+        request = factory.generic(
+            "POST", "/", json.dumps(CONFIG).encode(), content_type="",
+            HTTP_AUTHORIZATION=f"Bearer {ENV['ZENTRAL_SCEP_BROKER_TOKEN']}",
+        )
+        request.META.pop("CONTENT_TYPE", None)
+        self.assertEqual(challenge(request).status_code, 400)
+        request = factory.generic("POST", "/", b"{}", content_type="")
+        request.META.pop("CONTENT_TYPE", None)
+        self.assertEqual(authorize(request).status_code, 403)
+
     def test_internal_wsgi_starts_with_complete_settings_in_fresh_process(self):
         repository = Path(__file__).resolve().parents[2]
         script = """

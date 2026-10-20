@@ -8,6 +8,8 @@ Configure the native IDent issuer URL as `http://127.0.0.1:8001/internal/mdm/sce
 
 Configure a Smallstep v0.30.2 `SCEPCHALLENGE` webhook for provisioner `zentral`. Supply its generated ID as `ZENTRAL_SCEP_WEBHOOK_ID` and its base64 signing key as `ZENTRAL_SCEP_WEBHOOK_SECRET`. The broker validates the webhook ID, exact-body HMAC-SHA256 signature, and timestamp within five minutes. No static public challenge is accepted.
 
+Smallstep v0.30.2 omits `Content-Type` on its JSON webhook POST. The authorization endpoint accepts that native format or explicit `application/json`, while rejecting other declared media types. Both formats require the same signed body and strict JSON parsing. The separate bearer-authenticated mint endpoint still requires `application/json`.
+
 Each mint creates a random 256-bit challenge with a 15-minute lifetime. The database contains only its digest, encrypted expected CSR configuration, expiry, and the digests binding its first accepted CSR and transaction. A row lock makes concurrent first use atomic. Identical transport retries are accepted before expiry; any changed key, CSR, or transaction is rejected. The default secret engine must encrypt, including when an administrator gives a cleartext engine a different name. Preserve the existing Fernet password and Django secret-key recovery material.
 
 Run `python server/manage.py cleanup_scep_challenges` hourly. It removes expired records in bounded batches, retaining active challenges. Monitor the scheduled job so sensitive encrypted enrollment metadata does not accumulate.
