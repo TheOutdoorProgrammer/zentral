@@ -6,6 +6,7 @@ const miniCssExtractPlugin = require('mini-css-extract-plugin')
 module.exports = {
   mode: 'development',
   entry: {
+    telemetry: './server/static_src/js/telemetry.js',
     main: './server/static_src/js/main.js',
     theme: './server/static_src/js/theme.js',
     user_portal: './server/static_src/js/user_portal.js',
