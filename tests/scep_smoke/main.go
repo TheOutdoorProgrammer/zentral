@@ -148,6 +148,9 @@ func (p *probe) exchange(msg *scep.PKIMessage, success bool) error {
 
 func run() error {
 	pkcs7.ContentEncryptionAlgorithm = pkcs7.EncryptionAlgorithmAES256CBC
+	if err := pkcs7.SetDefaultDigestAlgorithm(pkcs7.OIDDigestAlgorithmSHA256); err != nil {
+		return errors.New("CMS digest configuration failed")
+	}
 	var config input
 	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 8192))
 	decoder.DisallowUnknownFields()
