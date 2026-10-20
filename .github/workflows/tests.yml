@@ -55,7 +55,8 @@ jobs:
             zentral-community:test server/manage.py test \
             tests.server_accounts.test_community_oidc \
             tests.server_accounts.test_auth_backend \
-            tests.server_base.test_telemetry
+            tests.server_base.test_telemetry \
+            tests.server_base.test_community_runtime
       - name: Verify control queues and task execution against RabbitMQ
         run: |
           docker run --rm --network host --entrypoint python \

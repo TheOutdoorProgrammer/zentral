@@ -58,8 +58,9 @@ def build_urlpatterns_for_zentral_apps():
                                             ("public/", "public_urls")):
             if url_module_name == "metrics_urls" and not app_config.get("metrics", False):
                 continue
+            module_name = f"{app_name}.{url_module_name}"
             try:
-                urlpatterns.append(path(f"{url_prefix}{app_shortname}/", include(f"{app_name}.{url_module_name}")))
+                urlpatterns.append(path(f"{url_prefix}{app_shortname}/", include(module_name)))
                 if (url_module_name == "public_urls" and app_config.get('mount_legacy_public_endpoints', False)):
                     urlpatterns.append(
                         path(
@@ -70,8 +71,9 @@ def build_urlpatterns_for_zentral_apps():
                             )
                         )
                     )
-            except ModuleNotFoundError:
-                pass
+            except ModuleNotFoundError as error:
+                if error.name != module_name:
+                    raise
     return urlpatterns
 
 

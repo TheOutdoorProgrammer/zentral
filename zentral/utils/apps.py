@@ -35,10 +35,12 @@ class ZentralAppConfig(AppConfig):
         self.register_legacy_perms()
 
     def _import_submodule(self, submodule_name):
+        module_name = f"{self.name}.{submodule_name}"
         try:
-            submodule = import_module(f"{self.name}.{submodule_name}")
-        except ModuleNotFoundError:
-            pass
+            submodule = import_module(module_name)
+        except ModuleNotFoundError as error:
+            if error.name != module_name:
+                raise
         else:
             logger.debug("App %s: %s submodule imported", self.name, submodule_name)
             setattr(self, f"{submodule_name}_module", submodule)

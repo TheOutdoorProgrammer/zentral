@@ -2,7 +2,7 @@
 
 This fork adds independently implemented OpenID Connect authentication to Zentral's Apache-2.0 core. Use it when you operate your own identity provider and need explicit administrator grants without enterprise authentication code.
 
-The source history still contains upstream's separately licensed `ee/` directory. The community image excludes that directory, the Python path does not load it, and community realm registration excludes enterprise OIDC, SAML and SCIM. This implementation does not grant rights to enterprise code.
+The source history still contains upstream's separately licensed `ee/` directory. The community image excludes that directory, the Python path does not load it, and community realm registration excludes enterprise OIDC, SAML and SCIM. Store APIs expose the included ClickHouse, Elasticsearch, HTTP, Kinesis, OpenSearch and S3 Parquet backends. Missing dependencies inside installed modules fail startup instead of silently disabling provisioning or API routes. This implementation does not grant rights to enterprise code.
 
 ## Authentication
 
@@ -33,7 +33,7 @@ Python 3.14 and PostgreSQL are required. Create a virtual environment and instal
 export ZENTRAL_CONF_DIR="$PWD/tests/community_conf"
 export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 POSTGRES_USER=zentral_test
 export ZENTRAL_POLICIES_SYNC=0 ZENTRAL_PROBES_SYNC=0 ZENTRAL_STORES_SYNC=0 ZENTRAL_QUIET=1
-python server/manage.py test tests.server_accounts.test_community_oidc tests.server_accounts.test_auth_backend tests.server_base.test_telemetry
+python server/manage.py test tests.server_accounts.test_community_oidc tests.server_accounts.test_auth_backend tests.server_base.test_telemetry tests.server_base.test_community_runtime
 npm ci
 node --test tests/browser-telemetry.test.mjs
 npm run build
