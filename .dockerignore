@@ -5,6 +5,8 @@ conf
 docs
 docker-compose*
 venv
+node_modules
+server/static/dist
 tox.ini
 Dockerfile
 ee
