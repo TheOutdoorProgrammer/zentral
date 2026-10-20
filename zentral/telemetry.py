@@ -21,7 +21,7 @@ SQL_OPERATIONS = frozenset(("SELECT", "INSERT", "UPDATE", "DELETE", "BEGIN", "CO
 ERROR_TYPES = frozenset((
     "AccessRefused", "AttributeError", "ConnectionError", "DataError", "DatabaseError", "ImportError",
     "IntegrityError", "InternalError", "KeyError", "ModuleNotFoundError", "NotFound", "NotImplementedError",
-    "OperationalError", "PermissionError", "PreconditionFailed", "RestartFreqExceeded", "RuntimeError",
+    "OperationalError", "PermissionError", "PreconditionFailed", "RequestError", "RestartFreqExceeded", "RuntimeError",
     "TimeoutError", "TypeError", "ValueError",
 ))
 propagator = CompositePropagator((TraceContextTextMapPropagator(), W3CBaggagePropagator()))

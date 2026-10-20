@@ -22,6 +22,9 @@ class OpenSearchStore(ESOSStore):
     client_class = OpenSearch
     connection_error_class = ConnectionError
     request_error_class = RequestError
+    # OpenSearch forked Elasticsearch 7.10; its own major version restarted at 1.
+    uses_typeless_api = True
+    supports_calendar_interval = True
 
     def _get_client_kwargs(self):
         client_kwargs = super()._get_client_kwargs()

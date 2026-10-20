@@ -181,6 +181,14 @@ class ESOSStore(BaseStore):
         # for the tests
         self.force_index_refresh = os.environ.get("ZENTRAL_FORCE_ES_OS_INDEX_REFRESH") == "1"
 
+    @property
+    def uses_typeless_api(self):
+        return self.version >= [7]
+
+    @property
+    def supports_calendar_interval(self):
+        return self.version >= [7, 2]
+
     def get_index_conf(self):
         index_settings = {
             "index.mapping.total_fields.limit": self.total_fields_limit,
@@ -188,7 +196,7 @@ class ESOSStore(BaseStore):
             "number_of_replicas": self.number_of_replicas,
         }
         if self.version:
-            if self.version >= [7]:
+            if self.uses_typeless_api:
                 return {"settings": index_settings,
                         "mappings": self.MAPPINGS}
             else:
@@ -241,7 +249,7 @@ class ESOSStore(BaseStore):
 
         # use_mapping_types
         if self.use_mapping_types is None:
-            if self.version >= [7]:
+            if self.uses_typeless_api:
                 self.use_mapping_types = False
             else:
                 mappings = set(
@@ -306,7 +314,7 @@ class ESOSStore(BaseStore):
         self.wait_and_configure_if_necessary()
         index, doc_type, body = self._serialize_event(event)
         kwargs = {"body": body}
-        if self.version < [7]:
+        if not self.uses_typeless_api:
             kwargs["doc_type"] = doc_type
         self._client.index(index=index, **kwargs)
         if self.force_index_refresh:
@@ -316,7 +324,7 @@ class ESOSStore(BaseStore):
         self.wait_and_configure_if_necessary()
         if self.batch_size < 2:
             raise RuntimeError("bulk_store is not available when batch_size < 2")
-        if self.version < [7]:
+        if not self.uses_typeless_api:
             raise RuntimeError("bulk_store is not available for elasticsearch < 7")
 
         ID_SEP = "_"
@@ -605,7 +613,7 @@ class ESOSStore(BaseStore):
         unit = self.INTERVAL_UNIT[interval]
         min_bound = f"now-{bucket_number - 1}{unit}/{unit}"
         max_bound = f"now/{unit}"
-        if self.version >= [7, 2]:
+        if self.supports_calendar_interval:
             interval_attr = "calendar_interval"
         else:
             interval_attr = "interval"
