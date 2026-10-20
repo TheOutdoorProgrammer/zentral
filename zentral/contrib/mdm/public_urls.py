@@ -1,9 +1,11 @@
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 from . import public_views
+from .scep_views import proxy
 
 app_name = "mdm_public"
 urlpatterns = [
+    path("scep/", proxy, name="scep"),
     # Apps & Books / apps views
     path('locations/<uuid:mdm_info_id>/notify/',
          csrf_exempt(public_views.NotifyLocationView.as_view()),

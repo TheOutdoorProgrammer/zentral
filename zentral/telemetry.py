@@ -14,7 +14,10 @@ from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 
-EVENTS = frozenset(("http.request", "database.query", "http.client", "job.run", "oidc.login"))
+EVENTS = frozenset((
+    "http.request", "database.query", "http.client", "job.run", "oidc.login",
+    "mdm.scep.challenge", "mdm.scep.authorize", "mdm.scep.proxy",
+))
 OUTCOMES = frozenset(("success", "failure", "denied"))
 METHODS = frozenset(("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"))
 SQL_OPERATIONS = frozenset(("SELECT", "INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT"))

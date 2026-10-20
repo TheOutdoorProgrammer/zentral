@@ -73,6 +73,28 @@ def get_platform_values():
     return Platform.values
 
 
+class SCEPChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    challenge_sha256 = models.CharField(max_length=64, unique=True)
+    csr_config = models.TextField()
+    expires_at = models.DateTimeField(db_index=True)
+    csr_sha256 = models.CharField(max_length=64, null=True)
+    transaction_sha256 = models.CharField(max_length=64, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def _secret_context(self):
+        return {"model": "mdm.scepchallenge", "pk": str(self.pk), "field": "csr_config"}
+
+    def set_csr_config(self, value):
+        self.csr_config = encrypt_str(value, **self._secret_context())
+
+    def get_csr_config(self):
+        return decrypt_str(self.csr_config, **self._secret_context())
+
+    def rewrap_secrets(self):
+        self.csr_config = rewrap(self.csr_config, **self._secret_context())
+
+
 # Push certificates
 
 
