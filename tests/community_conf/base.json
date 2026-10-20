@@ -1,0 +1,23 @@
+{
+  "api": {
+    "fqdn": "testserver"
+  },
+  "django": {
+    "SECRET_KEY": "community-tests-only-not-for-production",
+    "ALLOWED_HOSTS": ["testserver"],
+    "POSTGRES_HOST": "{{ env:POSTGRES_HOST }}",
+    "POSTGRES_PORT": "{{ env:POSTGRES_PORT }}",
+    "POSTGRES_USER": "{{ env:POSTGRES_USER }}",
+    "POSTGRES_NAME": "zentral_test",
+    "STORAGES": {
+      "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+      }
+    }
+  },
+  "queues": {
+    "backend": "zentral.core.queues.backends.kombu",
+    "backend_url": "memory://"
+  },
+  "apps": {}
+}

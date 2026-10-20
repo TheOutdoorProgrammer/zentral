@@ -1,4 +1,7 @@
 # Welcome to Zentral
+
+This community fork adds independent OIDC authentication and privacy-filtered telemetry. See [COMMUNITY.md](COMMUNITY.md) for configuration, testing, deployment scope and the enterprise-code boundary. Upstream project information follows.
+
 [![Tests](https://github.com/zentralopensource/zentral/actions/workflows/tests.yml/badge.svg)](https://github.com/zentralopensource/zentral/actions/workflows/tests.yml)
 [![Coverage Status](https://coveralls.io/repos/github/zentralopensource/zentral/badge.svg?branch=main)](https://coveralls.io/github/zentralopensource/zentral?branch=main)
 [![Documentation Status](https://readthedocs.org/projects/zentral/badge/?version=latest)](https://docs.zentral.io)

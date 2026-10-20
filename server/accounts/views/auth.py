@@ -17,6 +17,7 @@ from django.views.generic import FormView, View
 from realms.models import Realm
 
 from accounts.events import post_failed_verification_event
+from accounts.community_oidc import enabled as oidc_enabled
 from accounts.forms import VerifyTOTPForm, VerifyWebAuthnForm, ZentralAuthenticationForm
 from zentral.conf import settings as zentral_settings
 from zentral.utils.http import user_agent_and_ip_address_from_request
@@ -44,6 +45,14 @@ def login(request):
         return HttpResponseRedirect(redirect_to)
 
     form = realm = None
+    community_oidc = oidc_enabled()
+    oidc_only = settings.COMMUNITY_OIDC.get("only", False)
+
+    if oidc_only:
+        return TemplateResponse(request, "registration/login.html", {
+            "community_oidc": community_oidc,
+            "oidc_label": settings.COMMUNITY_OIDC.get("label", "OpenID Connect"),
+        })
 
     if request.method == "POST":
         form = ZentralAuthenticationForm(request, data=request.POST)
@@ -76,6 +85,8 @@ def login(request):
             form = ZentralAuthenticationForm(request)
 
     context = {
+        "community_oidc": community_oidc,
+        "oidc_label": settings.COMMUNITY_OIDC.get("label", "OpenID Connect"),
         "redirect_to": redirect_to,
         "redirect_field_name": REDIRECT_FIELD_NAME,
     }

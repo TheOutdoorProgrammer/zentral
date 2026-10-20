@@ -5,6 +5,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Zentral</title>
+    {% if telemetry_config %}
+    {{ telemetry_config|json_script:"telemetry-config" }}
+    <script src="{% static 'dist/telemetry.js' %}"></script>
+    {% endif %}
     <link rel="shortcut icon" href="{% static 'favicon.ico' %}">
     <link href="{% static 'dist/main.css' %}" rel="stylesheet">
     <script src="{% static 'dist/theme.js' %}"></script>

@@ -10,6 +10,7 @@ from zentral.core.queues.compression import compress_raw_event_if_needed
 from zentral.core.queues.exceptions import RetryLater
 from zentral.core.queues.preprocessing import iter_preprocessed_events
 from zentral.utils.json import save_dead_letter
+from zentral.telemetry import configure, event_worker
 
 
 logger = logging.getLogger('zentral.core.queues.backends.kombu')
@@ -32,6 +33,7 @@ class BaseWorker:
     counters = []
 
     def setup_metrics_exporter(self, *args, **kwargs):
+        configure()
         self.metrics_exporter = kwargs.pop("metrics_exporter", None)
         if self.metrics_exporter:
             for name, label in self.counters:
@@ -95,6 +97,7 @@ class PreprocessWorker(ConsumerProducerMixin, BaseWorker):
                          accept=['json'],
                          callbacks=[self.do_preprocess_raw_event])]
 
+    @event_worker
     def do_preprocess_raw_event(self, body, message):
         routing_key = message.delivery_info.get("routing_key")
         try:
@@ -135,6 +138,7 @@ class EnrichWorker(ConsumerProducerMixin, BaseWorker):
                          accept=['json'],
                          callbacks=[self.do_enrich_event])]
 
+    @event_worker
     def do_enrich_event(self, body, message):
         self.log_debug("enrich event")
         try:
@@ -174,6 +178,7 @@ class ProcessWorker(ConsumerMixin, BaseWorker):
                          accept=['json'],
                          callbacks=[self.do_process_event])]
 
+    @event_worker
     def do_process_event(self, body, message):
         self.log_debug("process event")
         event_type = body['_zentral']['type']
@@ -207,6 +212,7 @@ class StoreWorker(ConsumerMixin, BaseWorker):
                          accept=['json'],
                          callbacks=[self.do_store_event])]
 
+    @event_worker
     def do_store_event(self, body, message):
         self.log_debug("store event")
         event_type = body['_zentral']['type']

@@ -3,6 +3,14 @@
 {% block content %}
 
 <div class="reg-container">
+  {% if community_oidc %}
+  <h1 class="reg-title">Sign in</h1>
+  <form action="{% url 'accounts:community_oidc_login' %}" method="POST">
+    {% csrf_token %}
+    <button type="submit" class="reg-btn-primary">Sign in with {{ oidc_label }}</button>
+  </form>
+  {% if form or login_realms %}<h3 class="text-center my-4">or</h3>{% endif %}
+  {% endif %}
   {% for realm, login_link in login_realms %}
   <form action="{{ login_link }}" method="POST">{% csrf_token %}
       <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_to }}" required>

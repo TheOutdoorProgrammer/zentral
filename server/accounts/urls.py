@@ -1,9 +1,12 @@
 from django.urls import path
 
 from . import views
+from . import community_oidc
 
 app_name = "accounts"
 urlpatterns = [
+    path('oidc/login/', community_oidc.begin, name="community_oidc_login"),
+    path('oidc/callback/', community_oidc.callback, name="community_oidc_callback"),
     path('nginx/auth_request/', views.NginxAuthRequestView.as_view(),
          name="nginx_auth_request"),
 

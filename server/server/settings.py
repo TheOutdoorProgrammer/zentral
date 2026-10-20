@@ -113,9 +113,21 @@ AUTH_PASSWORD_VALIDATORS = django_zentral_settings.get("AUTH_PASSWORD_VALIDATORS
 ])
 
 AUTHENTICATION_BACKENDS = [
+    'accounts.community_oidc.CommunityOIDCBackend',
     'accounts.auth_backends.ZentralBackend',
     'realms.auth_backends.RealmBackend',
 ]
+
+COMMUNITY_OIDC = {
+    "issuer": os.environ.get("ZENTRAL_OIDC_ISSUER", ""),
+    "client_id": os.environ.get("ZENTRAL_OIDC_CLIENT_ID", ""),
+    "client_secret": os.environ.get("ZENTRAL_OIDC_CLIENT_SECRET", ""),
+    "redirect_uri": os.environ.get("ZENTRAL_OIDC_REDIRECT_URI", ""),
+    "allowed_emails": os.environ.get("ZENTRAL_OIDC_ALLOWED_EMAILS", "").split(","),
+    "admin_emails": os.environ.get("ZENTRAL_OIDC_ADMIN_EMAILS", "").split(","),
+    "label": os.environ.get("ZENTRAL_OIDC_LABEL", "OpenID Connect"),
+    "only": os.environ.get("ZENTRAL_OIDC_ONLY", "").lower() == "true",
+}
 
 # SESSION*
 SESSION_COOKIE_SECURE = True
@@ -142,6 +154,7 @@ for app_name in zentral_settings.get('apps', []):
     INSTALLED_APPS.append(app_name)
 
 MIDDLEWARE = [
+    'zentral.telemetry.TelemetryMiddleware',
     'base.middlewares.never_cache_middleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -180,6 +193,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'zentral.conf.context_processors.extra_links',
+                'zentral.telemetry.context_processor',
             ],
         },
     },
@@ -281,7 +295,8 @@ if "staticfiles" not in STORAGES:
 # everything in the console.
 
 
-log_formatter = django_zentral_settings.get("LOG_FORMATTER")
+log_formatter = ("zentral.telemetry.SafeJsonFormatter" if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+                 else django_zentral_settings.get("LOG_FORMATTER"))
 if log_formatter:
     log_formatter_dict = {'()': log_formatter}
     # this log formatter option can be used for example to configure the JSON output
@@ -359,3 +374,12 @@ LOGGING = {
         },
     }
 }
+
+if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    LOGGING['handlers']['otlp'] = {'class': 'zentral.telemetry.SafeOTLPHandler', 'level': 'INFO'}
+    LOGGING['root'] = {'handlers': ['console', 'otlp'], 'level': 'INFO'}
+    for logger_name in ('celery', 'opentelemetry'):
+        LOGGING['loggers'][logger_name] = {'handlers': ['console'], 'level': 'INFO', 'propagate': False}
+    for logger_config in LOGGING['loggers'].values():
+        logger_config['propagate'] = False
+        logger_config['handlers'] = ['console', 'otlp']

@@ -1,0 +1,11 @@
+This distribution contains modifications to the upstream Zentral project.
+
+TheOutdoorProgrammer community modifications include:
+- Independent OIDC account authentication, identity storage and security tests.
+- Community runtime and image exclusion of enterprise modules and their routes.
+- Privacy-filtered OpenTelemetry traces/logs and Grafana Faro browser telemetry.
+- Community build, configuration and architecture documentation.
+
+These modifications are supplied under the Apache License, Version 2.0.
+Upstream copyright and license notices remain applicable.
+The separately licensed ee directory is not included in the community image.

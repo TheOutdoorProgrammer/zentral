@@ -9,6 +9,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@nerdswhofish/browser-telemetry": "https://github.com/NerdsWhoFish/dusk/releases/download/v1.21.4/nerdswhofish-browser-telemetry-0.1.2.tgz",
     "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.2",
     "bootstrap-icons": "^1.11",

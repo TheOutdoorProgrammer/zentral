@@ -157,6 +157,17 @@ class User(AbstractUser):
         return d
 
 
+class CommunityOIDCIdentity(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="community_oidc_identity")
+    issuer = models.CharField(max_length=512)
+    subject = models.CharField(max_length=255)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("issuer", "subject"), name="community_oidc_issuer_subject"),
+        ]
+
+
 class UserPasswordHistory(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     password = models.CharField(_('password'), max_length=128)

@@ -1,39 +1,53 @@
 ---
-name: Tests
+name: Community tests
 
 on:
   push:
     branches:
       - main
+      - feat/community-oidc
   pull_request:
     branches:
       - main
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
-  run_tests:
+  community:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: zentral_test
+          POSTGRES_DB: zentral_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zentral_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: run tests with coverage
-        run: docker compose -f docker-compose.yml -f docker-compose.tests.yml run --quiet-pull --quiet-build -u root web tests_with_coverage
-        env:
-          COMPOSE_DOCKER_CLI_BUILD: 1
-          DOCKER_BUILDKIT: 1
-
-      - name: output coverage lcov
-        run: docker compose run --quiet-pull --quiet-build -u root web coverage_lcov
-        env:
-          COMPOSE_DOCKER_CLI_BUILD: 1
-          DOCKER_BUILDKIT: 1
-
-      - name: Coveralls
-        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
-        continue-on-error: true
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: "./coverage.lcov"
+      - name: Build the community runtime
+        run: docker build --build-arg APP_ENV=community -t zentral-community:test .
+      - name: Verify image boundaries and community behavior
+        run: |
+          docker run --rm --entrypoint sh zentral-community:test -c 'test ! -e /zentral/ee'
+          docker run --rm --network host --entrypoint python \
+            -v "$PWD/tests:/zentral/tests:ro" \
+            -e ZENTRAL_CONF_DIR=/zentral/tests/community_conf \
+            -e POSTGRES_HOST=127.0.0.1 -e POSTGRES_PORT=5432 -e POSTGRES_USER=zentral_test \
+            -e ZENTRAL_POLICIES_SYNC=0 -e ZENTRAL_PROBES_SYNC=0 \
+            -e ZENTRAL_STORES_SYNC=0 -e ZENTRAL_QUIET=1 \
+            zentral-community:test server/manage.py test \
+            tests.server_accounts.test_community_oidc \
+            tests.server_accounts.test_auth_backend \
+            tests.server_base.test_telemetry
+      - name: Verify browser privacy filtering
+        run: |
+          npm ci
+          node --test tests/browser-telemetry.test.mjs

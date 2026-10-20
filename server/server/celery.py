@@ -3,6 +3,7 @@ import os
 from celery import Celery, states
 from celery.signals import before_task_publish, worker_process_shutdown, worker_shutdown
 from django.utils.functional import SimpleLazyObject
+from zentral.telemetry import connect_celery
 
 
 logger = logging.getLogger("zentral.celery")
@@ -15,6 +16,7 @@ app.conf.result_extended = True
 app.conf.task_track_started = True
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
+connect_celery()
 
 
 # workaround for an issue where django-celery-results is not adding PENDING tasks to the database.

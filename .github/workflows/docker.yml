@@ -18,7 +18,7 @@ jobs:
   docker:
     strategy:
       matrix:
-        app_env: ["dev", "aws", "gcp"]
+        app_env: ["community"]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -30,11 +30,9 @@ jobs:
         with:
           labels: |
             org.opencontainers.image.title=Zentral
-            org.opencontainers.image.vendor=Zentral Pro Services GmbH
+            org.opencontainers.image.vendor=TheOutdoorProgrammer
           images: |
-            name=zentralopensource/zentral,enable=${{ matrix.app_env == 'dev' }}
-            name=zentralopensource/zentral-aws,enable=${{ matrix.app_env == 'aws' }}
-            name=zentralopensource/zentral-gcp,enable=${{ matrix.app_env == 'gcp' }}
+            name=ghcr.io/theoutdoorprogrammer/zentral
           flavor: |
             latest=false
           tags: |
@@ -42,7 +40,7 @@ jobs:
             type=ref,event=tag
             type=ref,event=pr
             type=sha
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && matrix.app_env == 'dev' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0

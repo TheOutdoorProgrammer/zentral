@@ -1,6 +1,7 @@
 -c requirements_constraints.txt
 
 asn1crypto                      # MDM, mTLS, SCEP
+Authlib>=1.6,<2
 azure-storage-blob
 boto3                           # conf, monolith, events (kinesis, sns/sqs)
 cedarpy
@@ -24,6 +25,8 @@ jinja2                          # events templates
 kombu<6                         # events queues
 msgraph-sdk
 opensearch-py<4
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
 prometheus_client               # publish prometheus metrics
 psycopg2-binary
 pyarrow

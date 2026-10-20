@@ -6,6 +6,8 @@ from django.utils.crypto import get_random_string
 from django.utils.functional import SimpleLazyObject
 from http.client import INTERNAL_SERVER_ERROR, NOT_FOUND
 from .utils import deployment_info
+from zentral.telemetry import context_processor
+from urllib.parse import urlsplit
 
 
 CSP_HEADER = 'Content-Security-Policy'
@@ -30,6 +32,10 @@ def make_csp_nonce(request, length=16):
 
 def build_csp_header(request):
     csp_policies = DEFAULT_CSP_POLICIES.copy()
+    telemetry = context_processor(request).get("telemetry_config")
+    if telemetry:
+        collector = urlsplit(telemetry["url"])
+        csp_policies["connect-src"] = f"'self' {collector.scheme}://{collector.netloc}"
     csp_nonce = getattr(request, '_csp_nonce', None)
     if csp_nonce:
         csp_policies["script-src"] += f" 'nonce-{csp_nonce}'"

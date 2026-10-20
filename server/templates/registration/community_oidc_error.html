@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="reg-container">
+  <h1 class="reg-title">Sign-in could not be completed</h1>
+  <p>Your sign-in may have expired, the identity provider may be unavailable, or this account may not have access.</p>
+  <a class="reg-btn-primary" href="{% url 'login' %}">Return to sign in</a>
+</div>
+{% endblock %}

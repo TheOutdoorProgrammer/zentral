@@ -1,5 +1,5 @@
 # Defining environment
-ARG APP_ENV=dev
+ARG APP_ENV=community
 ARG APP_VERSION=unknown
 
 
@@ -56,7 +56,7 @@ RUN pip install -r requirements.txt
 # Build the CSS and JS dist files
 COPY package.json package-lock.json webpack.config.js ./
 COPY server/static_src ./server/static_src
-RUN npm install && npm run build
+RUN npm ci && npm run build
 
 
 ####
@@ -68,6 +68,8 @@ RUN npm install && npm run build
 FROM base-builder AS dev-builder
 COPY requirements_*.txt ./
 RUN pip install -r requirements_dev.txt -r requirements_aws.txt -r requirements_gcp.txt
+
+FROM base-builder AS community-builder
 
 
 # Installing the extra requirements for aws
@@ -114,8 +116,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # zentral user and group
-RUN groupadd -g 999 zentral && \
-    useradd -u 999 -g 999 -m -d /zentral zentral
+RUN groupadd -g 1000 zentral && \
+    useradd -u 1000 -g 1000 -m -d /zentral zentral
 
 # common app dirs
 RUN mkdir /zentral_static && chown zentral:zentral /zentral_static
@@ -162,6 +164,9 @@ RUN apt-get update && \
 FROM base-runner AS gcp-runner
 COPY --from=gcp-builder /opt/venv /opt/venv
 
+FROM base-runner AS community-runner
+COPY --from=community-builder /opt/venv /opt/venv
+
 
 ####
 # Build stage 4:
@@ -171,10 +176,11 @@ COPY --from=gcp-builder /opt/venv /opt/venv
 
 FROM ${APP_ENV}-runner AS final
 ARG APP_VERSION
-LABEL maintainer="Éric Falconnier <eric@zentral.com>"
+LABEL org.opencontainers.image.source="https://github.com/TheOutdoorProgrammer/zentral"
 
 COPY docker-entrypoint.py /zentral/
-COPY ./ee /zentral/ee
+COPY LICENSE /zentral/LICENSE
+COPY COMMUNITY-NOTICE COMMUNITY.md /zentral/
 COPY ./server /zentral/server
 COPY ./zentral /zentral/zentral
 COPY --from=base-builder /server/static/dist /zentral/server/static/dist

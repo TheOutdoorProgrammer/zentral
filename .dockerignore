@@ -7,6 +7,6 @@ docker-compose*
 venv
 tox.ini
 Dockerfile
-LICENSE
+ee
 README.md
 SECURITY.md
