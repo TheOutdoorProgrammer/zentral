@@ -36,7 +36,8 @@ def main():
             time.sleep(1)
         else:
             raise RuntimeError("Worker did not answer control requests")
-        result = app.send_task("celery.accumulate", args=[["community-smoke"]], queue="community-smoke")
+        result = app.send_task("celery.accumulate", args=[["community-smoke"]],
+                               kwargs={"index": 0}, queue="community-smoke")
         if result.get(timeout=30) != ["community-smoke"]:
             raise RuntimeError("Worker returned an unexpected task result")
         result.forget()
