@@ -332,6 +332,10 @@ class CheckinView(MDMView):
         # purge the installed artifacts and sent commands, if it is not a re-enrollment
         if not created and not is_reenrollment:
             enrolled_device.purge_state(full=True)
+            # Purging clears enrollment flags, including facts established by this authenticated session.
+            for attr, value in enrolled_device_defaults.items():
+                setattr(enrolled_device, attr, value)
+            enrolled_device.save(update_fields=enrolled_device_defaults)
 
         # initial machine tagging
         if not is_reenrollment:

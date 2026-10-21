@@ -727,6 +727,36 @@ class MDMViewsTestCase(TestCase):
         self.assertFalse(ed.declarative_management)
         self.assertEqual(ed.declarations_token, "")
         self.assertEqual(ed.declaration_items_snapshot, {})
+        self.assertIs(ed.dep_enrollment, True)
+        self.assertIs(ed.user_enrollment, False)
+        self.assertIs(ed.supervised, True)
+        self.assertIs(ed.user_approved_enrollment, True)
+        self.assertEqual(ed.cert_not_valid_after, datetime(2034, 5, 6))
+
+    def test_authenticate_fresh_ios_ade_preserves_enrollment_flags(self, post_event):
+        previous_session, udid, serial_number = force_dep_enrollment_session(
+            self.mbu, authenticated=True, completed=True
+        )
+        session, _, _ = force_dep_enrollment_session(
+            self.mbu, device_udid=udid, serial_number=serial_number
+        )
+        session.dep_enrollment.await_device_configured = True
+        session.dep_enrollment.save()
+        payload = self._authenticate_payload(udid, serial_number, session)
+        payload.update(Model="iPhone14,7", ModelName="iPhone", OSVersion="26.0", BuildVersion="23A341")
+        response = self._put(reverse("mdm_public:checkin"), payload, session)
+        self.assertEqual(response.status_code, 200)
+        self._assertSuccess(post_event, new_enrolled_device=False, reenrollment=False)
+        session.refresh_from_db()
+        device = session.enrolled_device
+        self.assertEqual(device.pk, previous_session.enrolled_device_id)
+        self.assertEqual(device.platform, Platform.IOS)
+        self.assertIs(device.dep_enrollment, True)
+        self.assertIs(device.user_enrollment, False)
+        self.assertIs(device.supervised, True)
+        self.assertIsNone(device.user_approved_enrollment)
+        self.assertTrue(device.awaiting_configuration)
+        self.assertEqual(device.cert_not_valid_after, datetime(2034, 5, 6))
 
     # checkin - user authenticate
 
