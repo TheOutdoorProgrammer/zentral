@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from accounts.models import APIToken, User
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -39,6 +39,10 @@ from .utils import (
 )
 
 
+@override_settings(AUTHENTICATION_BACKENDS=[
+    "accounts.auth_backends.ZentralBackend",
+    "realms.auth_backends.RealmBackend",
+])
 class APIViewsTestCase(TestCase, LoginCase, RequestCase, ListOrderingCase):
     maxDiff = None
 
@@ -1000,7 +1004,8 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase, ListOrderingCase):
         self.assertNotIn("012345", json.dumps(event.payload))
 
     @patch("zentral.core.queues.backends.kombu.EventQueues.post_event")
-    def test_send_custom_enrolled_device_command_audit_event(self, post_event):
+    @patch("zentral.contrib.mdm.api_views.enrolled_devices.send_enrolled_device_notification")
+    def test_send_custom_enrolled_device_command_audit_event(self, notify, post_event):
         self.set_permissions("mdm.add_devicecommand")
         with self.captureOnCommitCallbacks(execute=True) as callbacks:
             response = self.post(
@@ -1009,7 +1014,9 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase, ListOrderingCase):
                                             "UnlockToken": "s3cr3t-token"}).decode("utf-8")}
             )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(callbacks), 1)
+        self.assertEqual(len(callbacks), 2)
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args, (self.enrolled_device,))
         event = post_event.call_args_list[0].args[0]
         self.assertIsInstance(event, AuditEvent)
         new_value = event.payload["object"]["new_value"]
@@ -1090,6 +1097,49 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase, ListOrderingCase):
         )
 
     # send custom enrolled device command
+
+    @patch("zentral.contrib.mdm.api_views.enrolled_devices.send_enrolled_device_notification")
+    def test_custom_command_notification_waits_for_commit(self, notify):
+        self.set_permissions("mdm.add_devicecommand")
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.post(
+                reverse("mdm_api:send_custom_enrolled_device_command", args=(self.enrolled_device.pk,)),
+                {"command": plistlib.dumps({"RequestType": "DeviceInformation",
+                                            "Queries": ["DeviceName"]}).decode("utf-8")},
+            )
+            notify.assert_not_called()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(callbacks), 2)
+        callbacks[1]()
+        notify.assert_called_once()
+
+    @patch("zentral.core.queues.backends.kombu.EventQueues.post_event")
+    @patch("zentral.contrib.mdm.api_views.enrolled_devices.send_enrolled_device_notification",
+           side_effect=RuntimeError("test notification failure"))
+    def test_custom_command_notification_failure_preserves_accepted_command(self, notify, post_event):
+        self.set_permissions("mdm.add_devicecommand")
+        with self.assertLogs("django.test", level="ERROR"):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.post(
+                    reverse("mdm_api:send_custom_enrolled_device_command", args=(self.enrolled_device.pk,)),
+                    {"command": plistlib.dumps({"RequestType": "DeviceInformation",
+                                                "Queries": ["DeviceName"]}).decode("utf-8")},
+                )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.enrolled_device.commands.count(), 1)
+        self.assertEqual(str(self.enrolled_device.commands.get().uuid), response.json()["uuid"])
+
+    @patch("zentral.contrib.mdm.api_views.enrolled_devices.send_enrolled_device_notification")
+    def test_invalid_custom_command_does_not_notify(self, notify):
+        self.set_permissions("mdm.add_devicecommand")
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            response = self.post(
+                reverse("mdm_api:send_custom_enrolled_device_command", args=(self.enrolled_device.pk,)),
+                {"command": "invalid"},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(callbacks, [])
+        notify.assert_not_called()
 
     def test_send_custom_enrolled_device_command_unauthorized(self):
         response = self.post(reverse("mdm_api:send_custom_enrolled_device_command", args=(self.enrolled_device.pk,)),

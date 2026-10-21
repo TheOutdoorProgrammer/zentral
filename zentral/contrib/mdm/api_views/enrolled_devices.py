@@ -217,6 +217,7 @@ class UnblockEnrolledDevice(UpdateEnrolledDeviceBlockView):
 class CreateEnrolledDeviceCommandView(APIView):
     permission_required = "mdm.add_devicecommand"
     permission_classes = [DjangoPermissionRequired]
+    notify_on_create = False
 
     def post(self, request, *args, **kwargs):
         enrolled_device = get_object_or_404(EnrolledDevice, pk=kwargs["pk"])
@@ -244,6 +245,13 @@ class CreateEnrolledDeviceCommandView(APIView):
             ).post()
 
         transaction.on_commit(on_commit_callback)
+        if self.notify_on_create:
+            # Commit the command before waking the device. An APNs failure must not
+            # turn an accepted command into a retryable HTTP error and duplicate it.
+            transaction.on_commit(
+                lambda: send_enrolled_device_notification(enrolled_device, request=request),
+                robust=True,
+            )
         serializer = DeviceCommandSerializer(command.db_command)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -258,6 +266,7 @@ class LockEnrolledDevice(CreateEnrolledDeviceCommandView):
 
 class SendCustomEnrolledDeviceCommand(CreateEnrolledDeviceCommandView):
     command_class = CustomCommand
+    notify_on_create = True
 
 
 class EnrolledDeviceAdminPassword(RetrieveAPIView):
