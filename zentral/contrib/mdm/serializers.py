@@ -1476,6 +1476,7 @@ class DEPEnrollmentSerializer(serializers.ModelSerializer):
             'auto_advance_setup',
             'await_device_configured',
             'department',
+            'do_not_use_profile_from_backup',
             'is_mandatory',
             'is_mdm_removable',
             'is_multi_user',

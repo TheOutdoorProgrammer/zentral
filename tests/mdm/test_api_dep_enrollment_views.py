@@ -12,9 +12,9 @@ from tests.zentral_test_utils.login_case import LoginCase
 from tests.zentral_test_utils.request_case import RequestCase
 from realms.models import Realm
 from zentral.contrib.inventory.models import MetaBusinessUnit
-from zentral.contrib.mdm.models import (DEPEnrollment, DEPEnrollmentCustomView, DEPEnrollmentSession,
+from zentral.contrib.mdm.models import (DEPDevice, DEPEnrollment, DEPEnrollmentCustomView, DEPEnrollmentSession,
                                         DEPVirtualServer, EnrollmentCustomView)
-from .utils import (force_dep_enrollment, force_push_certificate, force_acme_issuer,
+from .utils import (force_dep_device, force_dep_enrollment, force_push_certificate, force_acme_issuer,
                     force_scep_issuer, force_dep_virtual_server, force_realm, force_enrollment_custom_view)
 from zentral.contrib.mdm.skip_keys import skippable_setup_panes
 from zentral.core.events.base import AuditEvent
@@ -130,6 +130,7 @@ class ApiViewsTestCase(TestCase, LoginCase, RequestCase):
             'auto_advance_setup': enrollment.auto_advance_setup,
             'await_device_configured': enrollment.await_device_configured,
             'department': enrollment.department,
+            'do_not_use_profile_from_backup': enrollment.do_not_use_profile_from_backup,
             'is_mandatory': enrollment.is_mandatory,
             'is_mdm_removable': enrollment.is_mdm_removable,
             'is_multi_user': enrollment.is_multi_user,
@@ -775,7 +776,81 @@ class ApiViewsTestCase(TestCase, LoginCase, RequestCase):
         )
         self.assertIsNotNone(enrollment.enrollment_secret.tags.get(id=tag.id))
 
+        self.assertIs(enrollment.do_not_use_profile_from_backup, False)
+        self.assertIs(add_profile.call_args.args[0]["do_not_use_profile_from_backup"], False)
+
         self._assert_audit_event_send(enrollment, post_event, callbacks, AuditEvent.Action.CREATED)
+
+    @patch("zentral.contrib.mdm.dep_client.DEPClient.add_profile")
+    def test_create_dep_enrollment_fetch_current_profile_on_restore(self, add_profile):
+        self.set_permissions("mdm.add_depenrollment")
+        request = self._create_dep_enrollment_request()
+        request["do_not_use_profile_from_backup"] = True
+        add_profile.return_value = {"devices": {}, "profile_uuid": str(uuid.uuid4())}
+
+        response = self.post(reverse("mdm_api:dep_enrollments"), request)
+
+        self.assertEqual(response.status_code, 201)
+        enrollment = DEPEnrollment.objects.get(pk=response.json()["id"])
+        self.assertIs(enrollment.do_not_use_profile_from_backup, True)
+        self.assertIs(response.json()["do_not_use_profile_from_backup"], True)
+        self.assertIs(add_profile.call_args.args[0]["do_not_use_profile_from_backup"], True)
+
+    @patch("zentral.contrib.mdm.dep_client.DEPClient.add_profile")
+    def test_update_dep_enrollment_restore_policy_preserves_assignment(self, add_profile):
+        self.set_permissions("mdm.change_depenrollment")
+        enrollment = force_dep_enrollment(self.mbu)
+        enrollment.realm_user_is_admin = False
+        enrollment.save()
+        device = force_dep_device(server=enrollment.virtual_server, enrollment=enrollment,
+                                  profile_status=DEPDevice.PROFILE_STATUS_ASSIGNED)
+        secret = enrollment.enrollment_secret.secret
+        enrollment_url = None
+        for value, changed in ((True, True), (True, False), (False, True)):
+            with self.subTest(value=value, changed=changed):
+                add_profile.reset_mock()
+                add_profile.return_value = {
+                    "devices": {device.serial_number: "SUCCESS"}, "profile_uuid": str(uuid.uuid4())
+                }
+                request = self._dep_enrollment_to_dict(enrollment)
+                request["do_not_use_profile_from_backup"] = value
+                response = self.put(reverse("mdm_api:dep_enrollment", args=(enrollment.pk,)), request)
+                self.assertEqual(response.status_code, 200)
+                self.assertIs(response.json()["do_not_use_profile_from_backup"], value)
+                enrollment.refresh_from_db()
+                device.refresh_from_db()
+                self.assertIs(enrollment.do_not_use_profile_from_backup, value)
+                self.assertEqual(enrollment.enrollment_secret.secret, secret)
+                self.assertEqual(device.enrollment, enrollment)
+                self.assertIsNone(enrollment.virtual_server.default_enrollment)
+                if changed:
+                    add_profile.assert_called_once()
+                    payload = add_profile.call_args.args[0]
+                    self.assertIs(payload["do_not_use_profile_from_backup"], value)
+                    self.assertEqual(payload["devices"], [device.serial_number])
+                    self.assertEqual(device.profile_uuid, enrollment.uuid)
+                    if enrollment_url is not None:
+                        self.assertEqual(payload["url"], enrollment_url)
+                    enrollment_url = payload["url"]
+                else:
+                    add_profile.assert_not_called()
+
+    @patch("zentral.contrib.mdm.dep_client.DEPClient.add_profile")
+    def test_update_dep_enrollment_omitted_restore_policy_preserves_value(self, add_profile):
+        self.set_permissions("mdm.change_depenrollment")
+        enrollment = force_dep_enrollment(self.mbu)
+        enrollment.realm_user_is_admin = False
+        enrollment.do_not_use_profile_from_backup = True
+        enrollment.save()
+        request = self._dep_enrollment_to_dict(enrollment)
+        del request["do_not_use_profile_from_backup"]
+
+        response = self.put(reverse("mdm_api:dep_enrollment", args=(enrollment.pk,)), request)
+
+        self.assertEqual(response.status_code, 200)
+        enrollment.refresh_from_db()
+        self.assertIs(enrollment.do_not_use_profile_from_backup, True)
+        add_profile.assert_not_called()
 
     # Update DEP enrollment
 

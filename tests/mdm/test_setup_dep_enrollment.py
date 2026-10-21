@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from accounts.models import User
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 
@@ -25,6 +25,10 @@ from .utils import (
 )
 
 
+@override_settings(AUTHENTICATION_BACKENDS=[
+    "accounts.auth_backends.ZentralBackend",
+    "realms.auth_backends.RealmBackend",
+])
 class MDMDEPEnrollmentSetupViewsTestCase(TestCase, LoginCase):
     @classmethod
     def setUpTestData(cls):
@@ -61,6 +65,9 @@ class MDMDEPEnrollmentSetupViewsTestCase(TestCase, LoginCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "mdm/depenrollment_form.html")
         self.assertContains(response, "Create DEP enrollment")
+        self.assertFalse(response.context["dep_enrollment_form"]["do_not_use_profile_from_backup"].value())
+        self.assertContains(response, "Fetch current enrollment profile during restore")
+        self.assertContains(response, "26.4")
 
     def test_create_dep_enrollment_os_version_errors(self):
         self.login("mdm.add_depenrollment", "mdm.view_depenrollment")
@@ -332,11 +339,76 @@ class MDMDEPEnrollmentSetupViewsTestCase(TestCase, LoginCase):
         self.assertEqual(enrollment.admin_password_complexity, 3)
         self.assertEqual(enrollment.admin_password_rotation_delay, 60)
         client.add_profile.assert_called_once()
+        self.assertIs(enrollment.do_not_use_profile_from_backup, False)
+        self.assertIs(client.add_profile.call_args.args[0]["do_not_use_profile_from_backup"], False)
         self.assertEqual(enrollment.uuid, profile_uuid)
         self.assertContains(response, "OS version &lt; 15")
         self.assertContains(response, "12.3.1 ≤ OS version")
 
     # view DEP enrollment
+
+    @patch("zentral.contrib.mdm.dep_client.DEPClient.add_profile")
+    def test_create_dep_enrollment_fetch_current_profile_on_restore(self, add_profile):
+        permissions = ("mdm.add_depenrollment", "mdm.view_depenrollment")
+        self.login(*permissions)
+        add_profile.return_value = {"devices": {}, "profile_uuid": str(uuid.uuid4())}
+        response = self.client.post(reverse("mdm:create_dep_enrollment"), {
+            "de-name": get_random_string(12),
+            "de-display_name": "Restore policy test",
+            "de-scep_issuer": force_scep_issuer().pk,
+            "de-push_certificate": force_push_certificate().pk,
+            "de-virtual_server": force_dep_virtual_server().pk,
+            "de-is_supervised": "on",
+            "de-is_mandatory": "on",
+            "de-do_not_use_profile_from_backup": "on",
+            "de-admin_password_complexity": 3,
+            "de-admin_password_rotation_delay": 60,
+            "es-meta_business_unit": self.mbu.pk,
+        }, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "mdm/depenrollment_detail.html")
+        self.assertIs(response.context["object"].do_not_use_profile_from_backup, True)
+        self.assertIs(add_profile.call_args.args[0]["do_not_use_profile_from_backup"], True)
+        self.assertContains(response, "<th>fetch current enrollment profile during restore</th>"
+                            "<td>yes</td>", html=True)
+
+    @patch("zentral.contrib.mdm.views.dep_enrollments.define_dep_profile_task")
+    def test_update_dep_enrollment_restore_policy_only(self, define_dep_profile_task):
+        enrollment = force_dep_enrollment(self.mbu)
+        enrollment.realm_user_is_admin = False
+        enrollment.save()
+        secret = enrollment.enrollment_secret.secret
+        permissions = ("mdm.change_depenrollment", "mdm.view_depenrollment")
+        self.login(*permissions)
+        url = reverse("mdm:update_dep_enrollment", args=(enrollment.pk,))
+        for value, changed in ((True, True), (True, False), (False, True)):
+            with self.subTest(value=value, changed=changed):
+                define_dep_profile_task.reset_mock()
+                response = self.client.get(url)
+                data = {}
+                for context_key in ("dep_enrollment_form", "enrollment_secret_form"):
+                    form = response.context[context_key]
+                    for field in form:
+                        field_value = field.value()
+                        if field_value is not None and field_value is not False:
+                            data[field.html_name] = field_value
+                data["de-do_not_use_profile_from_backup"] = value
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self.client.post(url, data, follow=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, "mdm/depenrollment_detail.html")
+                enrollment.refresh_from_db()
+                self.assertIs(enrollment.do_not_use_profile_from_backup, value)
+                self.assertEqual(enrollment.enrollment_secret.secret, secret)
+                if changed:
+                    define_dep_profile_task.apply_async.assert_called_once_with(
+                        (enrollment.pk,), {"task_user": self.user.pk}
+                    )
+                else:
+                    define_dep_profile_task.apply_async.assert_not_called()
+                displayed = "yes" if value else "no"
+                self.assertContains(response, "<th>fetch current enrollment profile during restore</th>"
+                                    f"<td>{displayed}</td>", html=True)
 
     def test_view_dep_enrollment_redirect(self):
         enrollment = force_dep_enrollment(self.mbu)

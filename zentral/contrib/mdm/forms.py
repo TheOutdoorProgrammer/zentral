@@ -473,6 +473,7 @@ class CreateDEPEnrollmentForm(forms.ModelForm):
             "virtual_server", "name",
             "allow_pairing", "is_supervised", "is_mandatory", "is_mdm_removable", "is_multi_user",
             "await_device_configured", "auto_advance_setup", "include_tls_certificates",
+            "do_not_use_profile_from_backup",
             "support_phone_number", "support_email_address",
             "org_magic", "department", "language", "region"
         ]
@@ -517,6 +518,7 @@ class CreateDEPEnrollmentForm(forms.ModelForm):
                   'auto_advance_setup',
                   'await_device_configured',
                   'department',
+                  'do_not_use_profile_from_backup',
                   'is_mandatory',
                   'is_mdm_removable',
                   'is_multi_user',

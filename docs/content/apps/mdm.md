@@ -210,6 +210,30 @@ These configurations are typically applied by assigning a dedicated blueprint du
 2. Update fields such as *Name*, *Inventory Interval*, or data collection options as needed.
 3. Click *Save* to apply the changes.
 
+### Restore a backup during Automated Device Enrollment
+
+Enable **Fetch current enrollment profile during restore** on an enrollment when
+restored devices should use the current Apple-assigned management configuration
+instead of the enrollment profile in their backup. The REST API field is
+`do_not_use_profile_from_backup`, a JSON boolean. It defaults to `false`, including
+for existing enrollments. Updating an existing enrollment through the API without
+this field preserves its current value.
+
+Apple supports this option on iOS 26 and visionOS 26 or later; older devices
+ignore it. On version 26.4 or later, enabling it also removes configuration
+profiles restored from the backup. Ensure the intended profiles and declarations
+are assigned in Zentral so they can be delivered after enrollment. Apple documents
+automatic fresh enrollment behavior for iOS 27 and visionOS 27, where this option
+no longer changes restore behavior. See Apple's [profile specification](https://developer.apple.com/documentation/devicemanagement/profile)
+and [restore guidance](https://support.apple.com/en-ca/guide/deployment/depd44f04xc4/web).
+
+Publish and verify the enrollment configuration and the exact device assignment
+before beginning a restore. Keep the Restore Setup Assistant pane enabled when
+users need to restore an iCloud backup. Changing this option does not erase a
+device, begin enrollment on a configured device, or establish that enrollment
+has succeeded. Verify the resulting supervised enrollment and policy delivery;
+Apple's profile assignment status alone is insufficient.
+
 ### Connect a Blueprint to an Enrollment
 
 1. Go to *MDM > Overview > Enrollments* and select or create an enrollment profile.

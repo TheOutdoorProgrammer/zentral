@@ -2111,6 +2111,14 @@ class DEPEnrollment(MDMEnrollment):
     # configuration_web_url is automatically set for authentication or direct MDM payload download
     department = models.CharField(max_length=125, blank=True)  # see DEPARTMENT_INVALID error
     # devices see DEPDevice
+    do_not_use_profile_from_backup = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Fetch current enrollment profile during restore",
+        help_text="On iOS 26.x and visionOS 26.x, fetch the current enrollment profile instead of "
+                  "using the backup's profile. On version 26.4 or later, also remove restored configuration "
+                  "profiles; the MDM service must deliver the current configurations again."
+    )
     is_mandatory = models.BooleanField(
         default=True,
         help_text="If true, the user may not skip applying the profile returned by the MDM server."

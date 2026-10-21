@@ -3,9 +3,11 @@ from datetime import datetime
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.utils.crypto import get_random_string
 
-from zentral.contrib.inventory.models import MetaBusinessUnit
+from zentral.contrib.inventory.models import EnrollmentSecret, MetaBusinessUnit
 from zentral.contrib.mdm.dep import (
     assign_dep_device_profile,
     assign_dep_virtual_server_default_enrollment,
@@ -20,7 +22,7 @@ from zentral.contrib.mdm.dep_client import (
     DEPProfileThrottledError,
 )
 from zentral.contrib.mdm.events.dep import DEPDeviceChangeEvent
-from zentral.contrib.mdm.models import DEPDevice
+from zentral.contrib.mdm.models import DEPDevice, DEPEnrollment
 from zentral.contrib.mdm.tasks import define_dep_profile_task
 from zentral.utils.time import naive_utcnow
 
@@ -28,6 +30,24 @@ from .utils import force_dep_device, force_dep_enrollment, force_dep_virtual_ser
 
 
 class TestDEPEnrollment(TestCase):
+    def test_restore_policy_database_default_supports_previous_model(self):
+        enrollment = force_dep_enrollment(MetaBusinessUnit.objects.create(name=get_random_string(12)))
+        self.assertIs(enrollment.do_not_use_profile_from_backup, False)
+        previous_apps = MigrationExecutor(connection).loader.project_state([("mdm", "0111_scepchallenge")]).apps
+        previous_model = previous_apps.get_model("mdm", "DEPEnrollment")
+        data = {field.attname: getattr(enrollment, field.attname)
+                for field in previous_model._meta.concrete_fields if not field.primary_key}
+        data["name"] = get_random_string(12)
+        data["uuid"] = uuid.uuid4()
+        data["enrollment_secret_id"] = EnrollmentSecret.objects.create(
+            meta_business_unit=enrollment.enrollment_secret.meta_business_unit
+        ).pk
+
+        # An older application image omits this NOT NULL column when it inserts an enrollment.
+        previous_enrollment = previous_model.objects.create(**data)
+
+        self.assertIs(DEPEnrollment.objects.get(pk=previous_enrollment.pk).do_not_use_profile_from_backup, False)
+
     @patch("zentral.contrib.mdm.dep.DEPClient.from_dep_token")
     def test_sync_dep_virtual_server_devices_fetch(self, from_dep_token):
         client = Mock()

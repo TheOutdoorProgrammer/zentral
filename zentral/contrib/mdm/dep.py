@@ -111,6 +111,7 @@ def serialize_dep_profile(dep_enrollment):
     for attr in ("allow_pairing",
                  "auto_advance_setup",
                  "await_device_configured",
+                 "do_not_use_profile_from_backup",
                  "is_mandatory",
                  "is_mdm_removable",
                  "is_multi_user",
