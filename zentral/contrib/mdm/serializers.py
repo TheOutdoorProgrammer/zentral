@@ -1337,6 +1337,10 @@ class LocationSerializer(serializers.ModelSerializer):
 class LocationAssetSerializer(serializers.ModelSerializer):
     adam_id = serializers.CharField(source="asset.adam_id", read_only=True)
     pricing_param = serializers.CharField(source="asset.pricing_param", read_only=True)
+    name = serializers.CharField(source="asset.name", read_only=True, allow_null=True)
+    bundle_id = serializers.CharField(source="asset.bundle_id", read_only=True, allow_null=True)
+    product_type = serializers.CharField(source="asset.product_type", read_only=True)
+    device_assignable = serializers.BooleanField(source="asset.device_assignable", read_only=True)
 
     class Meta:
         model = LocationAsset
@@ -1345,10 +1349,14 @@ class LocationAssetSerializer(serializers.ModelSerializer):
             "asset",
             "assigned_count",
             "available_count",
+            "bundle_id",
             "created_at",
+            "device_assignable",
             "id",
             "location",
+            "name",
             "pricing_param",
+            "product_type",
             "retired_count",
             "total_count",
             "updated_at",

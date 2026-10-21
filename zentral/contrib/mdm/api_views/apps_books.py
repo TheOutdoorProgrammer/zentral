@@ -24,6 +24,7 @@ class LocationAssetFilter(filters.FilterSet):
     location_id = filters.ModelChoiceFilter(field_name="location", queryset=Location.objects.all())
     adam_id = filters.CharFilter(field_name="asset__adam_id")
     pricing_param = filters.CharFilter(field_name="asset__pricing_param")
+    bundle_id = filters.CharFilter(field_name="asset__bundle_id")
 
 
 class LocationAssetList(ListAPIView):

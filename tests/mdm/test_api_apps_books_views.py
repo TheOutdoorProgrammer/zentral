@@ -255,6 +255,10 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
                   'asset': la.asset.pk,
                   'assigned_count': 0,
                   'available_count': 0,
+                  'bundle_id': la.asset.bundle_id,
+                  'device_assignable': la.asset.device_assignable,
+                  'name': la.asset.name,
+                  'product_type': la.asset.product_type,
                   'created_at': la.created_at.isoformat(),
                   'id': la.pk,
                   'location': la.location.pk,
@@ -280,6 +284,10 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
                   'asset': la.asset.pk,
                   'assigned_count': 0,
                   'available_count': 0,
+                  'bundle_id': la.asset.bundle_id,
+                  'device_assignable': la.asset.device_assignable,
+                  'name': la.asset.name,
+                  'product_type': la.asset.product_type,
                   'created_at': la.created_at.isoformat(),
                   'id': la.pk,
                   'location': la.location.pk,
@@ -297,6 +305,40 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'count': 0, 'next': None, 'previous': None, 'results': []})
 
+    def test_location_assets_by_bundle_id_and_location(self):
+        self.set_permissions("mdm.view_locationasset")
+        la = force_location_asset()
+        la.asset.name = "Example App"
+        la.asset.bundle_id = "com.example.app"
+        la.asset.save()
+        force_location_asset(asset=la.asset)
+        other = force_location_asset(location=la.location)
+        other.asset.bundle_id = "com.example.app.extra"
+        other.asset.save()
+        response = self.get(
+            reverse("mdm_api:location_assets")
+            + f"?bundle_id=com.example.app&location_id={la.location.pk}"
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["id"], la.pk)
+        self.assertEqual(data["results"][0]["name"], "Example App")
+        self.assertEqual(data["results"][0]["bundle_id"], "com.example.app")
+        self.assertEqual(data["results"][0]["product_type"], "App")
+        self.assertTrue(data["results"][0]["device_assignable"])
+
+    def test_location_assets_by_bundle_id_is_exact(self):
+        self.set_permissions("mdm.view_locationasset")
+        la = force_location_asset()
+        la.asset.bundle_id = "com.example.app"
+        la.asset.save()
+        for query in ("com.example", "com.example.app.extra", "com.EXAMPLE.app"):
+            with self.subTest(query=query):
+                response = self.get(reverse("mdm_api:location_assets") + f"?bundle_id={query}")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["count"], 0)
+
     def test_location_assets_by_pricing_param(self):
         self.set_permissions("mdm.view_locationasset")
         la = force_location_asset()
@@ -312,6 +354,10 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
                   'asset': la.asset.pk,
                   'assigned_count': 0,
                   'available_count': 0,
+                  'bundle_id': la.asset.bundle_id,
+                  'device_assignable': la.asset.device_assignable,
+                  'name': la.asset.name,
+                  'product_type': la.asset.product_type,
                   'created_at': la.created_at.isoformat(),
                   'id': la.pk,
                   'location': la.location.pk,
@@ -345,6 +391,10 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
                   'asset': la.asset.pk,
                   'assigned_count': 0,
                   'available_count': 0,
+                  'bundle_id': la.asset.bundle_id,
+                  'device_assignable': la.asset.device_assignable,
+                  'name': la.asset.name,
+                  'product_type': la.asset.product_type,
                   'created_at': la.created_at.isoformat(),
                   'id': la.pk,
                   'location': la.location.pk,
@@ -383,6 +433,10 @@ class APIViewsTestCase(TestCase, LoginCase, RequestCase):
                   'asset': la.asset.pk,
                   'assigned_count': 0,
                   'available_count': 0,
+                  'bundle_id': la.asset.bundle_id,
+                  'device_assignable': la.asset.device_assignable,
+                  'name': la.asset.name,
+                  'product_type': la.asset.product_type,
                   'created_at': la.created_at.isoformat(),
                   'id': la.pk,
                   'location': la.location.pk,

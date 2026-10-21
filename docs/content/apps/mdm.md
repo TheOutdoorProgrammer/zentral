@@ -1721,6 +1721,7 @@ Result:
  * PBAC action: `MDM::Action::"viewLocationAsset"`
  * available filters:
      * `adam_id`
+     * `bundle_id` (exact, case-sensitive match)
      * `pricing_param`
      * `location_id`
  * pagination:
@@ -1728,6 +1729,12 @@ Result:
     * `offset`
 
 Fetches the list of Apps / Books location assets.
+
+Each result includes the read-only asset `name`, `bundle_id`, `product_type`, and
+`device_assignable` metadata. Names and bundle IDs can be null until Apple metadata
+has synchronized. Combine `bundle_id` with `location_id` to resolve a licensed app
+without hard-coding the location-asset ID. Multiple pricing variants may match;
+clients must reject ambiguous results rather than selecting the first one.
 
 Example:
 
