@@ -29,3 +29,25 @@ test('Faro drops private routes, error messages, users, and console content', ()
   assert.equal(result.payload.value, 'Error');
   assert.equal(filter({ type: 'log', meta, payload: { message: 'secret' } }), null);
 });
+
+test('Family Setup RUM keeps the route but discards pairing fragments and device content', () => {
+  const filter = privacyFilter({
+    app: { name: 'zentral', version: 'test', environment: 'test' },
+    origin: 'https://zentral.example.test',
+    routes: ['/public/mdm/family-setup/'],
+    assets: ['/static/dist/family_setup.js'],
+    operations: [],
+  });
+  const result = filter({
+    type: 'exception',
+    meta: {
+      user: { name: 'PRIVATE_DEVICE_NAME' },
+      page: { url: 'https://zentral.example.test/public/mdm/family-setup/?private=query#token=SECRET_CAPABILITY' },
+      sdk: { name: 'test', version: '1' },
+      session: { id: 'opaque', attributes: { isSampled: 'true' } },
+    },
+    payload: { type: 'Error', value: 'PRIVATE_DEVICE_NAME SECRET_CAPABILITY', timestamp: new Date().toISOString() },
+  });
+  assert.equal(result.meta.page.url, '/public/mdm/family-setup/');
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE|SECRET|private=query|token=/);
+});

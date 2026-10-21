@@ -17,6 +17,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 EVENTS = frozenset((
     "http.request", "database.query", "http.client", "job.run", "oidc.login",
     "mdm.scep.challenge", "mdm.scep.authorize", "mdm.scep.proxy",
+    "family_setup.page", "family_setup.activate", "family_setup.status", "family_setup.step",
+    "family_setup.forget", "family_setup.provision", "family_setup.revoke",
 ))
 OUTCOMES = frozenset(("success", "failure", "denied"))
 METHODS = frozenset(("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"))

@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Family Setup</h1>
+<p><a href="{{ device.get_absolute_url }}">Back to device</a></p>
+<dl>
+  <dt>Device</dt><dd>{{ device.name|default:'Unnamed device' }}</dd>
+  <dt>Serial number</dt><dd>{{ device.serial_number }}</dd>
+  <dt>Blueprint</dt><dd>{{ device.blueprint|default:'None' }}</dd>
+</dl>
+<p>Publish a Home Screen checklist for this device only. Choose the audience matching its blueprint.
+  The checklist can read installation status and save personal confirmations. It cannot send management commands.</p>
+{% if access %}
+<p>Access expires {{ access.expires_at }}.{% if access.revoked_at %} Access is revoked.{% endif %}</p>
+{% if access.artifact %}<p><a href="{{ access.artifact.get_absolute_url }}">Check the setup profile and delivery</a></p>{% endif %}
+<p>Publishing again creates a new profile version and invalidates the previous setup link and browser access.
+  The device must receive the new version before it can open setup again. Saved confirmations are retained.</p>
+{% endif %}
+<p>The setup link grants access to this device's checklist. Keep it private. Revoking access takes effect immediately;
+  it leaves the Home Screen icon in place. Removing the profile is a separate action.</p>
+<form method="post" class="update-form">{% csrf_token %}{{ form }}
+  <button class="btn btn-primary" type="submit">Apply to this device</button>
+</form>
+{% endblock %}

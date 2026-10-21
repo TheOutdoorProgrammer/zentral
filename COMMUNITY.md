@@ -6,6 +6,9 @@ The source history still contains upstream's separately licensed `ee/` directory
 
 ## Authentication
 
+For post-enrollment family onboarding, see [Family Setup](FAMILY-SETUP.md). It adds a device-scoped web checklist and
+managed Home Screen link without requiring family members to have administrator accounts.
+
 Register a confidential OIDC client with the exact callback `https://YOUR_HOST/accounts/oidc/callback/`. The provider must support authorization code, S256 PKCE, `client_secret_basic`, discovery and asymmetric ID-token signatures. ID tokens must contain a verified email. Supply configuration through environment variables and a secret manager:
 
 | Variable | Meaning |

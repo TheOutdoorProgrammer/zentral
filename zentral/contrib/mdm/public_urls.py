@@ -2,9 +2,15 @@ from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 from . import public_views
 from .scep_views import proxy
+from . import family_setup
 
 app_name = "mdm_public"
 urlpatterns = [
+    path("family-setup/", family_setup.index, name="family_setup"),
+    path("family-setup/activate/", family_setup.activate, name="family_setup_activate"),
+    path("family-setup/status/", family_setup.status, name="family_setup_status"),
+    path("family-setup/step/", family_setup.step, name="family_setup_step"),
+    path("family-setup/forget/", family_setup.forget, name="family_setup_forget"),
     path("scep/", proxy, name="scep"),
     # Apps & Books / apps views
     path('locations/<uuid:mdm_info_id>/notify/',

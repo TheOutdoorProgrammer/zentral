@@ -15,6 +15,9 @@
     <li class="breadcrumb-item active">{{ object.udid|privacywrapper }}</li>
   </ol>
   <div class="object-details">
+    {% if request.user.is_superuser %}
+    <p><a href="{% url 'mdm:family_setup_manage' object.pk %}">Prepare Family Setup</a></p>
+    {% endif %}
     <div class="d-flex align-items-center mb-1">
       <h2 class="m-0">{{ object.udid|privacywrapper }}</h2>
     </div>

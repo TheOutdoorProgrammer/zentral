@@ -1,9 +1,11 @@
 from django.urls import path
 from . import views
+from . import family_setup_admin
 from .models import Artifact
 
 app_name = "mdm"
 urlpatterns = [
+    path('devices/<int:pk>/family-setup/', family_setup_admin.manage, name='family_setup_manage'),
     # setup views
 
     path('',

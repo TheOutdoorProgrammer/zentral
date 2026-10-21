@@ -6,8 +6,10 @@ if (config) {
   initializeTelemetry({
     url,
     app: { name: 'zentral', version, environment },
-    routes: ['/', '/accounts/login/', '/accounts/logout/', '/accounts/oidc/login/', '/accounts/oidc/callback/'],
-    assets: ['/static/dist/telemetry.js', '/static/dist/main.js', '/static/dist/theme.js'],
+    routes: ['/', '/accounts/login/', '/accounts/logout/', '/accounts/oidc/login/', '/accounts/oidc/callback/',
+      '/public/mdm/family-setup/'],
+    assets: ['/static/dist/telemetry.js', '/static/dist/main.js', '/static/dist/theme.js',
+      '/static/dist/family_setup.js', '/static/dist/family_setup.css'],
     operations: [],
   });
 }

@@ -3465,6 +3465,25 @@ class StoreApp(models.Model):
         return d
 
 
+class FamilySetupAccess(models.Model):
+    class Audience(models.TextChoices):
+        ADULT = "adult", "Adult"
+        CHILD = "child", "Child"
+
+    enrolled_device = models.OneToOneField(EnrolledDevice, on_delete=models.CASCADE)
+    blueprint = models.ForeignKey(Blueprint, on_delete=models.PROTECT)
+    audience = models.CharField(max_length=8, choices=Audience.choices)
+    token_digest = models.CharField(max_length=64, unique=True)
+    enrollment_fingerprint = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True)
+    completed_steps = models.JSONField(default=dict)
+    artifact = models.OneToOneField(Artifact, on_delete=models.PROTECT, null=True)
+    tag = models.OneToOneField("inventory.Tag", on_delete=models.PROTECT, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class TargetArtifact(models.Model):
 
     class Status(models.TextChoices):
