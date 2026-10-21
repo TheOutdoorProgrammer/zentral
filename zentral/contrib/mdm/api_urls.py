@@ -1,4 +1,5 @@
 from django.urls import path
+from .api_views.device_configuration import DeviceConfigurationTarget
 
 from .api_views import (
                         ACMEIssuerDetail,
@@ -76,6 +77,7 @@ from .api_views import (
 
 app_name = "mdm_api"
 urlpatterns = [
+    path('devices/configuration_target/', DeviceConfigurationTarget.as_view(), name="device_configuration_target"),
     path('acme_issuers/', ACMEIssuerList.as_view(), name="acme_issuers"),
     path('acme_issuers/<uuid:pk>/', ACMEIssuerDetail.as_view(), name="acme_issuer"),
     path('artifacts/', ArtifactList.as_view(), name="artifacts"),
