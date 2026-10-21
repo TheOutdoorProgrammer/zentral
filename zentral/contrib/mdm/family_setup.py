@@ -56,6 +56,20 @@ STEPS = (
                          "Do not copy someone else's tunnel. Ask for help if your profile is missing or fails."],
     },
     {
+        "id": "location", "title": "Share your location with family",
+        "description": "Choose who can see you in Find My. A parent helps with a child's device.",
+        "instructions": ["Check that this device uses your personal Apple Account "
+                         "and belongs to your Family Sharing group.",
+                         "Open Settings, then Family, then Location Sharing. Choose the family members to share with.",
+                         "In Settings, tap your name, then Find My. Check that Share My Location is on.",
+                         "On the iPhone you carry, tap Use This iPhone as My Location if it is available. "
+                         "An iPad left at home should not replace that phone as your location source.",
+                         "Check Find My on the receiving family member's device and confirm your location appears.",
+                         "Mark this done after checking together. "
+                         "This checklist cannot turn sharing on or verify your location."],
+        "link": {"label": "Apple's family location-sharing guide", "url": "https://support.apple.com/105107"},
+    },
+    {
         "id": "family", "title": "Finish family settings together",
         "description": "A parent completes this step with you.", "audience": "child",
         "instructions": ["Sign in with the child's personal Apple Account and check Family Sharing.",

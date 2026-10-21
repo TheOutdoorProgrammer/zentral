@@ -19,6 +19,10 @@ The administrative page is `/mdm/devices/<device-id>/family-setup/`. The app its
 `/public/mdm/family-setup/`. Visiting the app without current device access shows a pairing explanation, not a list of
 devices or a login to the management console.
 
+The managed Home Screen icon is nonremovable by the user. This applies only to Family Setup and does not prevent
+deleting other apps. An administrator can remove its managed profile. The bundled generated logo is embedded in the
+profile, so the icon does not depend on fetching an image from the website.
+
 Publishing creates a dedicated inventory tag, Profile artifact and immutable version. Both the version and blueprint
 attachment default to shard zero and target only that tag at 100. The transaction checks native effective eligibility
 across the blueprint before committing. Reused tags or broadened attachments cause publication to fail. Do not change
@@ -32,6 +36,10 @@ Git, OpenTofu and provider state.
   installed; acknowledgement, old versions and queued work do not count as delivery of the current version.
 - Missing scoped Wi-Fi, VPN and Child web-filter profiles are explicitly shown as not configured.
 - Personal confirmations saved by the person using this checklist. These do not change MDM state.
+
+The location-sharing step explains Family Sharing and Find My, choosing a carried iPhone as the location source,
+and checking visibility with the receiving family member. It is available to both audiences; children complete it
+with a parent. The portal does not enable sharing, read locations, or verify that sharing is active.
 
 The app does not inspect passwords, account sign-in, browsing history or location, and cannot issue device commands.
 It cannot verify internet access or tunnel routing from an installation report. If a required app is not assigned to
@@ -87,10 +95,25 @@ artifact attachment is a separate MDM action. **Forget access on this browser** 
 not revoke the managed link or delete saved progress. A blueprint transfer requires deliberate reconciliation of the
 existing exclusive artifact before reissuing access.
 
+For an icon or managed Web Clip settings update, the guarded `refresh_profile(device)` helper adds an immutable
+profile version while preserving current access, expiration and confirmations. It requires the existing capability
+to be valid for that device's current enrollment and retains the exclusive targeting checks. Use renewal to replace
+expired or revoked access. Never update a published profile's bytes in place.
+
 No copy of the generated link needs to be exported for recovery. Use the normal encrypted application/database backup,
 or revoke and publish a replacement if access is lost. Retain published profile versions for audit and recovery.
 
 ## Tests and deployment acceptance
+
+### Logo asset
+
+`zentral/contrib/mdm/static/mdm/family-setup-icon.png` is the shared website and managed Web Clip logo. It was generated
+with the built-in image-generation tool and exported to a 384-pixel square PNG for Apple's payload size limits.
+The generation prompt was:
+
+> Use case: logo-brand. Create one finished square app icon for Family Setup, a private family-device onboarding app with an outdoors field-guide visual identity. A simple, distinctive warm-cream house silhouette with a single forest trail leading to its doorway and a small amber compass-star accent. Flat, carefully balanced graphic shapes, sturdy legible silhouette at tiny iPhone Home Screen size, welcoming and calm, suitable for adults and children. Existing app palette: solid deep forest green #203f35 background, warm paper #f8f5ed mark, restrained amber #d7a14b accent. Center the mark with generous 18 percent safe padding. Full-bleed square opaque background, no rounded outer corners, no border, no text or letters, no mockup, no gradients, no shadow, no photorealism. Output a single PNG icon, ideally 384 by 384 pixels, ready for the app and managed iOS Web Clip.
+
+### Validation
 
 Run `tests.mdm.test_family_setup` with the community MDM test configuration and an isolated PostgreSQL test database.
 It covers token scope, CSRF, revocation, certificate changes, current artifact status, exclusive profile eligibility,

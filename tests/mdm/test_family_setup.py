@@ -1,8 +1,10 @@
 import json
 import plistlib
 import secrets
+import struct
 import uuid
 from datetime import timedelta
+from importlib.resources import files
 from unittest.mock import patch
 
 from accounts.models import User
@@ -13,7 +15,7 @@ from django.utils import timezone
 from zentral.contrib.inventory.models import MachineTag
 from zentral.contrib.mdm.artifacts import Target, update_blueprint_serialized_artifacts
 from zentral.contrib.mdm.family_setup import COOKIE, COOKIE_PATH, active_access, digest_token, enrollment_fingerprint
-from zentral.contrib.mdm.family_setup_admin import provision
+from zentral.contrib.mdm.family_setup_admin import provision, refresh_profile
 from zentral.contrib.mdm.models import BlueprintArtifact, DeviceArtifact, EnrolledDevice, FamilySetupAccess, Platform
 
 from .utils import force_blueprint, force_blueprint_artifact, force_push_certificate
@@ -343,6 +345,18 @@ class FamilySetupTests(TestCase):
         self.access.save()
         self.assertNotIn("web", self.checks_by_id())
 
+    def test_location_step_is_a_personal_confirmation_for_both_audiences(self):
+        for audience in FamilySetupAccess.Audience.values:
+            with self.subTest(audience=audience):
+                self.access.audience = audience
+                self.access.completed_steps = {}
+                self.access.save()
+                self.assertIn("location", {step["id"] for step in self.get_status().json()["steps"]})
+                response = self.post("step", {"step": "location", "done": True})
+                self.assertEqual(response.status_code, 200)
+                self.access.refresh_from_db()
+                self.assertEqual(self.access.completed_steps, {"location": True})
+
     def test_shortcut_links_accept_only_exact_icloud_share_urls(self):
         valid = "https://www.icloud.com/shortcuts/" + "a" * 32
         invalid = ["http://www.icloud.com/shortcuts/" + "a" * 32,
@@ -370,7 +384,16 @@ class FamilySetupTests(TestCase):
         access = provision(self.device, FamilySetupAccess.Audience.CHILD)
         version = access.artifact.artifactversion_set.get()
         profile = plistlib.loads(version.profile.source)
-        url = profile["PayloadContent"][0]["URL"]
+        self.assertIs(profile["PayloadRemovalDisallowed"], True)
+        clip = profile["PayloadContent"][0]
+        self.assertIs(clip["IsRemovable"], False)
+        self.assertIs(clip["Precomposed"], True)
+        self.assertEqual(clip["Icon"], files("zentral.contrib.mdm").joinpath(
+            "static/mdm/family-setup-icon.png").read_bytes())
+        self.assertLessEqual(len(clip["Icon"]), 1024 * 1024)
+        self.assertEqual(clip["Icon"][:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", clip["Icon"][16:24]), (384, 384))
+        url = clip["URL"]
         token = url.split("#token=", 1)[1]
         self.assertEqual(digest_token(token), access.token_digest)
         self.assertIsNotNone(active_access(token))
@@ -407,6 +430,114 @@ class FamilySetupTests(TestCase):
         self.assertEqual(new_payload["PayloadUUID"], old_payload["PayloadUUID"])
         self.assertNotEqual(new_payload["PayloadContent"][0]["URL"], old_payload["PayloadContent"][0]["URL"])
         self.assertLessEqual(renewed.expires_at, timezone.now() + timedelta(days=180))
+
+    def make_legacy_setup_profile(self, device=None):
+        access = provision(device or self.device, FamilySetupAccess.Audience.CHILD)
+        version = access.artifact.artifactversion_set.get()
+        payload = plistlib.loads(version.profile.source)
+        payload.pop("PayloadRemovalDisallowed", None)
+        clip = payload["PayloadContent"][0]
+        clip["IsRemovable"] = True
+        del clip["Icon"], clip["Precomposed"]
+        version.profile.source = plistlib.dumps(payload)
+        version.profile.save()
+        return access, version, payload
+
+    def test_refresh_preserves_capability_progress_expiry_history_and_exclusive_scope(self):
+        other, _, _ = self.make_access()
+        access, old_version, old_payload = self.make_legacy_setup_profile()
+        old_source = bytes(old_version.profile.source)
+        token = old_payload["PayloadContent"][0]["URL"].split("#token=", 1)[1]
+        self.client.cookies[COOKIE] = token
+        access.completed_steps = {"wifi": True}
+        access.expires_at = timezone.now() + timedelta(days=12)
+        access.save()
+        refreshed = refresh_profile(self.device)
+        self.assertEqual(refreshed.pk, access.pk)
+        self.assertEqual(refreshed.artifact_id, access.artifact_id)
+        self.assertEqual(refreshed.tag_id, access.tag_id)
+        self.assertEqual(refreshed.token_digest, access.token_digest)
+        self.assertEqual(refreshed.enrollment_fingerprint, access.enrollment_fingerprint)
+        self.assertEqual(refreshed.expires_at, access.expires_at)
+        self.assertEqual(refreshed.completed_steps, {"wifi": True})
+        self.assertEqual(self.get_status().status_code, 200)
+        self.assertEqual(self.post("step", {"step": "apps", "done": True}).status_code, 200)
+        versions = list(refreshed.artifact.artifactversion_set.order_by("version"))
+        self.assertEqual([version.version for version in versions], [1, 2])
+        self.assertEqual(bytes(versions[0].profile.source), old_source)
+        payload = plistlib.loads(versions[1].profile.source)
+        self.assertIs(payload["PayloadRemovalDisallowed"], True)
+        clip, old_clip = payload["PayloadContent"][0], old_payload["PayloadContent"][0]
+        for before, after in ((old_payload, payload), (old_clip, clip)):
+            self.assertEqual(before["PayloadIdentifier"], after["PayloadIdentifier"])
+            self.assertEqual(before["PayloadUUID"], after["PayloadUUID"])
+        self.assertEqual(clip["URL"], old_clip["URL"])
+        self.assertIs(clip["IsRemovable"], False)
+        self.assertIs(clip["Precomposed"], True)
+        self.assertIn("Icon", clip)
+        for scoped in (versions[1], BlueprintArtifact.objects.get(artifact=access.artifact)):
+            self.assertEqual(scoped.default_shard, 0)
+            self.assertEqual(scoped.shard_modulo, 100)
+            self.assertEqual(list(scoped.item_tags.values_list("tag_id", "shard")), [(access.tag_id, 100)])
+        self.device.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIn(str(access.artifact_id), {a["pk"] for a, _ in Target(self.device).all_in_scope_serialized()})
+        self.assertNotIn(str(access.artifact_id), {a["pk"] for a, _ in Target(other).all_in_scope_serialized()})
+        refresh_profile(self.device)
+        self.assertEqual(access.artifact.artifactversion_set.count(), 2)
+
+    def test_refresh_rejects_foreign_or_noncanonical_profile_links_without_changes(self):
+        access, version, payload = self.make_legacy_setup_profile()
+        original = payload["PayloadContent"][0]["URL"]
+        other, _, _ = self.make_access()
+        _, _, foreign_payload = self.make_legacy_setup_profile(other)
+        foreign_url = foreign_payload["PayloadContent"][0]["URL"]
+        invalid = (foreign_url, original.replace("https://zentral/", "https://other.example/"),
+                   original.replace("/#token=", "/?unexpected=true#token="), original + "&extra=true")
+        for url in invalid:
+            with self.subTest(case=invalid.index(url)):
+                payload["PayloadContent"][0]["URL"] = url
+                version.profile.source = plistlib.dumps(payload)
+                version.profile.save()
+                with self.assertRaisesMessage(ValueError, "current private link"):
+                    refresh_profile(self.device)
+                self.assertEqual(access.artifact.artifactversion_set.count(), 1)
+                access.refresh_from_db()
+                self.assertEqual(access.token_digest, digest_token(original.split("#token=", 1)[1]))
+
+    def test_refresh_rejects_inactive_access_without_changes(self):
+        access, _, _ = self.make_legacy_setup_profile()
+        for field, value in (("revoked_at", timezone.now()),
+                             ("expires_at", timezone.now() - timedelta(days=1)),
+                             ("enrollment_fingerprint", "changed")):
+            with self.subTest(field=field):
+                previous = getattr(access, field)
+                setattr(access, field, value)
+                access.save()
+                with self.assertRaisesMessage(ValueError, "current private link"):
+                    refresh_profile(self.device)
+                self.assertEqual(access.artifact.artifactversion_set.count(), 1)
+                access.refresh_from_db()
+                self.assertEqual(getattr(access, field), value)
+                setattr(access, field, previous)
+                access.save()
+
+    def test_refresh_rejects_shared_tag_and_broadened_scope_without_new_versions(self):
+        access, version, _ = self.make_legacy_setup_profile()
+        other, _, _ = self.make_access()
+        tag_assignment = MachineTag.objects.create(serial_number=other.serial_number, tag=access.tag)
+        with self.assertRaisesMessage(ValueError, "Setup tag must belong only"):
+            refresh_profile(self.device)
+        self.assertEqual(access.artifact.artifactversion_set.count(), 1)
+        tag_assignment.delete()
+        for scoped in (version, BlueprintArtifact.objects.get(artifact=access.artifact)):
+            scoped.default_shard = 100
+            scoped.save()
+            with self.assertRaisesMessage(ValueError, "no longer has exclusive scope"):
+                refresh_profile(self.device)
+            self.assertEqual(access.artifact.artifactversion_set.count(), 1)
+            scoped.default_shard = 0
+            scoped.save()
 
     def test_provision_rejects_unsupervised_device_without_changing_access(self):
         self.device.supervised = False

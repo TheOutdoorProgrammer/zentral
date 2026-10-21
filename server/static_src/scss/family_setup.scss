@@ -23,7 +23,7 @@ h3 { font-size: 1.1rem; font-weight: 650; margin: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .skip-link { position: fixed; top: 8px; left: 8px; z-index: 10; background: $paper; padding: .7rem 1rem; transform: translateY(-150%); &:focus { transform: translateY(0); } }
 .masthead { min-height: 80px; display: flex; align-items: center; gap: .7rem; padding: 1rem max(5vw, env(safe-area-inset-left)); background: $forest; color: $paper; font-weight: 600; font-size: 1rem; }
-.brand-mark { font-size: 2rem; line-height: 1; color: #e9bb71; }
+.brand-mark { display: block; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 10px; }
 .masthead-caption { margin-left: auto; font-size: .8rem; font-weight: 400; color: #d0dccd; }
 main { max-width: 1240px; margin: 0 auto; padding: clamp(2rem, 5vw, 4rem) max(1.25rem, env(safe-area-inset-left)) 2rem; min-height: calc(100vh - 80px); }
 .setup-layout { display: grid; grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr); gap: clamp(2rem, 7vw, 6rem); }
@@ -69,7 +69,7 @@ details[open] summary::after { content: "−"; }
 .step-actions { margin-top: 1.4rem; }
 .button { border: 1px solid $forest; background: $forest; color: white; padding: .65rem 1rem; min-height: 44px; cursor: pointer; border-radius: 4px; font-size: .82rem; font-weight: 600; transition: background .15s ease, transform .15s ease; &:hover:not(:disabled) { background: #365b45; } &:active:not(:disabled) { transform: translateY(1px); } }
 .button-quiet { background: transparent; border-color: transparent; color: $forest; padding: .5rem .4rem; text-decoration: underline; text-underline-offset: .2em; &:hover:not(:disabled) { background: #e3e8da; } }
-.text-link { display: inline-block; padding: .6rem 0; min-height: 44px; font-size: .87rem; font-weight: 650; text-underline-offset: .25em; overflow-wrap: anywhere; &:hover { color: #697a32; } }
+.text-link { display: inline-block; padding: .6rem 0; min-height: 44px; font-size: .87rem; font-weight: 650; text-underline-offset: .25em; overflow-wrap: anywhere; &:hover { color: #536127; } }
 .shortcuts { background: #f0e7d5; border-left: 3px solid $amber; padding: 1.5rem; margin-top: 2rem; p:not(.eyebrow) { font-size: .88rem; color: #655c47; } h2 { margin-top: .3rem; } .eyebrow { color: #76603b; } }
 .shortcut-list { list-style: none; padding: 0; margin: .5rem 0 0; li + li { border-top: 1px solid #dbceb5; } }
 .empty-copy { font-size: .82rem; color: $muted; margin-bottom: 0; }

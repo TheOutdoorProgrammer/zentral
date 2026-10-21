@@ -1,7 +1,9 @@
 import plistlib
 import secrets
+import struct
 import uuid
 from datetime import timedelta
+from importlib.resources import files
 from urllib.parse import urlsplit
 
 from django import forms
@@ -19,7 +21,7 @@ from zentral.conf import settings as zentral_settings
 from zentral.contrib.inventory.models import MachineTag, Tag
 from .apns import send_enrolled_device_notification
 from .artifacts import Target, update_blueprint_serialized_artifacts
-from .family_setup import digest_token, eligible_device, enrollment_fingerprint, private_response
+from .family_setup import active_access, digest_token, eligible_device, enrollment_fingerprint, private_response
 from .forms import UploadProfileForm, UpgradeProfileForm
 from .models import (ArtifactVersion, ArtifactVersionTag, BlueprintArtifact, BlueprintArtifactTag,
                      Channel, EnrolledDevice, FamilySetupAccess, Platform)
@@ -32,15 +34,28 @@ class SetupForm(forms.Form):
     confirm = forms.BooleanField(label="I checked this device and its Adult or Child blueprint.")
 
 
-def _profile(access, token):
+def _setup_url():
     origin = zentral_settings["api"]["tls_hostname"].rstrip("/")
     parsed = urlsplit(origin)
     if (parsed.scheme != "https" or not parsed.hostname or parsed.path or parsed.query or parsed.fragment
             or parsed.username or parsed.password):
         raise ValueError("Family Setup requires a configured HTTPS application origin")
+    return origin + reverse("mdm_public:family_setup")
+
+
+def _icon():
+    icon = files("zentral.contrib.mdm").joinpath("static/mdm/family-setup-icon.png").read_bytes()
+    if (len(icon) > 1024 * 1024 or len(icon) < 24 or icon[:8] != b"\x89PNG\r\n\x1a\n"
+            or icon[12:16] != b"IHDR" or struct.unpack(">II", icon[16:24]) != (384, 384)):
+        raise ValueError("Family Setup requires a 384px PNG icon smaller than 1MB")
+    return icon
+
+
+def _profile(access, token):
     identifier = f"com.zentral.family-setup.{access.pk}"
     payload = {
         "PayloadType": "Configuration", "PayloadVersion": 1, "PayloadScope": "System",
+        "PayloadRemovalDisallowed": True,
         "PayloadIdentifier": identifier, "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_URL, identifier)).upper(),
         "PayloadDisplayName": "Family Setup", "PayloadDescription": "Private setup checklist for this device.",
         "PayloadContent": [{
@@ -48,8 +63,9 @@ def _profile(access, token):
             "PayloadIdentifier": identifier + ".webclip",
             "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_URL, identifier + ".webclip")).upper(),
             "PayloadDisplayName": "Family Setup", "Label": "Family Setup",
-            "URL": origin + reverse("mdm_public:family_setup") + "#token=" + token,
-            "FullScreen": True, "IsRemovable": True, "IgnoreManifestScope": True,
+            "URL": _setup_url() + "#token=" + token,
+            "FullScreen": True, "IsRemovable": False, "IgnoreManifestScope": True,
+            "Precomposed": True, "Icon": _icon(),
         }],
     }
     return SimpleUploadedFile("family-setup.mobileconfig", plistlib.dumps(payload), "application/x-apple-aspen-config")
@@ -61,7 +77,7 @@ def provision(device, audience):
     device = EnrolledDevice.objects.select_for_update(of=("self",)).select_related("blueprint").get(pk=device.pk)
     if not eligible_device(device) or audience not in FamilySetupAccess.Audience.values:
         raise ValueError("Choose a supervised, active ADE iPhone or iPad with a blueprint")
-    access = FamilySetupAccess.objects.filter(enrolled_device=device).first()
+    access = FamilySetupAccess.objects.select_for_update().filter(enrolled_device=device).first()
     if access and access.blueprint_id != device.blueprint_id:
         raise ValueError("The blueprint changed. Reconcile the existing setup artifact before publishing again")
     token = secrets.token_urlsafe(32)
@@ -75,6 +91,42 @@ def provision(device, audience):
     access.expires_at = timezone.now() + timedelta(days=180)
     access.revoked_at = None
     access.save()
+    access.enrolled_device = device
+    return _save_profile(access, token)
+
+
+@transaction.atomic
+def refresh_profile(device):
+    device = EnrolledDevice.objects.select_for_update(of=("self",)).select_related("blueprint").get(pk=device.pk)
+    access = FamilySetupAccess.objects.select_for_update().filter(enrolled_device=device).first()
+    if not access or not access.artifact_id or not access.tag_id:
+        raise ValueError("Publish setup access before refreshing its profile")
+    latest = access.artifact.artifactversion_set.order_by("-version").first()
+    try:
+        payload = plistlib.loads(latest.profile.source)
+        clips = payload["PayloadContent"]
+        if len(clips) != 1 or clips[0]["PayloadType"] != "com.apple.webClip.managed":
+            raise ValueError
+        prefix = _setup_url() + "#token="
+        url = clips[0]["URL"]
+        if not isinstance(url, str) or not url.startswith(prefix):
+            raise ValueError
+        token = url[len(prefix):]
+        current = active_access(token)
+        if current is None or current.pk != access.pk:
+            raise ValueError
+        expected = plistlib.loads(_profile(access, token).read())
+        for actual, wanted in ((payload, expected), (clips[0], expected["PayloadContent"][0])):
+            if any(actual[key] != wanted[key] for key in ("PayloadIdentifier", "PayloadUUID")):
+                raise ValueError
+    except (AttributeError, KeyError, TypeError, ValueError, plistlib.InvalidFileException):
+        raise ValueError("Existing setup profile does not contain this device's current private link") from None
+    access.enrolled_device = device
+    return _save_profile(access, token)
+
+
+def _save_profile(access, token):
+    device = access.enrolled_device
 
     if access.tag_id is None:
         access.tag = Tag.objects.create(name="setup-device-" + uuid.uuid4().hex)
@@ -85,15 +137,24 @@ def provision(device, audience):
         raise ValueError("Setup tag must belong only to the selected device")
 
     source = _profile(access, token)
+    new_version = True
     if access.artifact_id:
         artifact = access.artifact
         latest = artifact.artifactversion_set.order_by("-version").first()
-        form = UpgradeProfileForm({}, {"source_file": source}, artifact=artifact, instance=latest.profile)
-        if not form.is_valid():
-            raise ValueError("The generated setup profile failed validation")
-        version = ArtifactVersion.objects.create(artifact=artifact, version=latest.version + 1,
-                                                 ios=True, ipados=True, default_shard=0, shard_modulo=100)
-        form.save(version)
+        if (latest.default_shard != 0 or latest.shard_modulo != 100
+                or list(latest.item_tags.values_list("tag_id", "shard")) != [(access.tag_id, 100)]):
+            raise ValueError("Existing setup version no longer has exclusive scope")
+        if bytes(latest.profile.source) == source.read():
+            version = latest
+            new_version = False
+        else:
+            source.seek(0)
+            form = UpgradeProfileForm({}, {"source_file": source}, artifact=artifact, instance=latest.profile)
+            if not form.is_valid():
+                raise ValueError("The generated setup profile failed validation")
+            version = ArtifactVersion.objects.create(artifact=artifact, version=latest.version + 1,
+                                                     ios=True, ipados=True, default_shard=0, shard_modulo=100)
+            form.save(version)
     else:
         form = UploadProfileForm({}, {"source_file": source})
         if not form.is_valid():
@@ -110,7 +171,8 @@ def provision(device, audience):
         version.shard_modulo = 100
         version.save()
         access.artifact = artifact
-    ArtifactVersionTag.objects.create(artifact_version=version, tag=access.tag, shard=100)
+    if new_version:
+        ArtifactVersionTag.objects.create(artifact_version=version, tag=access.tag, shard=100)
     assignment, created = BlueprintArtifact.objects.get_or_create(
         blueprint=device.blueprint, artifact=artifact,
         defaults={"ios": True, "ipados": True, "default_shard": 0, "shard_modulo": 100},

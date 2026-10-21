@@ -9,7 +9,7 @@ if (config) {
     routes: ['/', '/accounts/login/', '/accounts/logout/', '/accounts/oidc/login/', '/accounts/oidc/callback/',
       '/public/mdm/family-setup/'],
     assets: ['/static/dist/telemetry.js', '/static/dist/main.js', '/static/dist/theme.js',
-      '/static/dist/family_setup.js', '/static/dist/family_setup.css'],
+      '/static/dist/family_setup.js', '/static/dist/family_setup.css', '/static/mdm/family-setup-icon.png'],
     operations: [],
   });
 }
