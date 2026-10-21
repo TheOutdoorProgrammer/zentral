@@ -81,7 +81,8 @@ jobs:
             zentral-community:test server/manage.py test \
             tests.mdm.test_crypto tests.mdm.test_mdm_views tests.mdm.test_ota_enrollment \
             tests.mdm.test_apns tests.mdm.test_workers tests.mdm.test_apns_telemetry \
-            tests.mdm.test_scep_broker tests.mdm.test_scep_proxy tests.mdm.test_provision_ota_enrollment
+            tests.mdm.test_scep_broker tests.mdm.test_scep_proxy tests.mdm.test_provision_ota_enrollment \
+            tests.mdm.test_dep tests.mdm.test_setup_dep_enrollment tests.mdm.test_api_dep_enrollment_views
       - name: Build the manual SCEP integration probe
         working-directory: tests/scep_smoke
         run: |
