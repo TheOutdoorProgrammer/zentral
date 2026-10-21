@@ -386,7 +386,7 @@ class FamilySetupTests(TestCase):
         profile = plistlib.loads(version.profile.source)
         self.assertIs(profile["PayloadRemovalDisallowed"], True)
         clip = profile["PayloadContent"][0]
-        self.assertIs(clip["IsRemovable"], False)
+        self.assertIs(clip["IsRemovable"], True)
         self.assertIs(clip["Precomposed"], True)
         self.assertEqual(clip["Icon"], files("zentral.contrib.mdm").joinpath(
             "static/mdm/family-setup-icon.png").read_bytes())
@@ -472,7 +472,7 @@ class FamilySetupTests(TestCase):
             self.assertEqual(before["PayloadIdentifier"], after["PayloadIdentifier"])
             self.assertEqual(before["PayloadUUID"], after["PayloadUUID"])
         self.assertEqual(clip["URL"], old_clip["URL"])
-        self.assertIs(clip["IsRemovable"], False)
+        self.assertIs(clip["IsRemovable"], True)
         self.assertIs(clip["Precomposed"], True)
         self.assertIn("Icon", clip)
         for scoped in (versions[1], BlueprintArtifact.objects.get(artifact=access.artifact)):
@@ -483,6 +483,28 @@ class FamilySetupTests(TestCase):
         other.refresh_from_db()
         self.assertIn(str(access.artifact_id), {a["pk"] for a, _ in Target(self.device).all_in_scope_serialized()})
         self.assertNotIn(str(access.artifact_id), {a["pk"] for a, _ in Target(other).all_in_scope_serialized()})
+        refresh_profile(self.device)
+        self.assertEqual(access.artifact.artifactversion_set.count(), 2)
+
+    def test_refresh_makes_existing_icon_removable_without_changing_access_or_other_profile_settings(self):
+        access = provision(self.device, FamilySetupAccess.Audience.CHILD)
+        access.completed_steps = {"wifi": True}
+        access.save()
+        version = access.artifact.artifactversion_set.get()
+        payload = plistlib.loads(version.profile.source)
+        payload["PayloadContent"][0]["IsRemovable"] = False
+        version.profile.source = plistlib.dumps(payload)
+        version.profile.save()
+        old_source = bytes(version.profile.source)
+        refreshed = refresh_profile(self.device)
+        current = refreshed.artifact.artifactversion_set.latest("version")
+        self.assertEqual(current.version, version.version + 1)
+        version.profile.refresh_from_db()
+        self.assertEqual(bytes(version.profile.source), old_source)
+        payload["PayloadContent"][0]["IsRemovable"] = True
+        self.assertEqual(plistlib.loads(current.profile.source), payload)
+        for field in ("token_digest", "expires_at", "completed_steps", "enrollment_fingerprint"):
+            self.assertEqual(getattr(refreshed, field), getattr(access, field))
         refresh_profile(self.device)
         self.assertEqual(access.artifact.artifactversion_set.count(), 2)
 

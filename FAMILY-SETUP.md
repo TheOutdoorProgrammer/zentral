@@ -19,9 +19,10 @@ The administrative page is `/mdm/devices/<device-id>/family-setup/`. The app its
 `/public/mdm/family-setup/`. Visiting the app without current device access shows a pairing explanation, not a list of
 devices or a login to the management console.
 
-The managed Home Screen icon is nonremovable by the user. This applies only to Family Setup and does not prevent
-deleting other apps. An administrator can remove its managed profile. The bundled generated logo is embedded in the
-profile, so the icon does not depend on fetching an image from the website.
+The user can delete the Family Setup Home Screen icon. Its configuration profile remains managed and protected from
+manual removal; an administrator can remove that profile. Deleting the icon does not revoke its private link or erase
+saved checklist progress. The bundled generated logo is embedded in the profile, so the icon does not depend on
+fetching an image from the website.
 
 Publishing creates a dedicated inventory tag, Profile artifact and immutable version. Both the version and blueprint
 attachment default to shard zero and target only that tag at 100. The transaction checks native effective eligibility

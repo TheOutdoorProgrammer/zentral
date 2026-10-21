@@ -64,7 +64,7 @@ def _profile(access, token):
             "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_URL, identifier + ".webclip")).upper(),
             "PayloadDisplayName": "Family Setup", "Label": "Family Setup",
             "URL": _setup_url() + "#token=" + token,
-            "FullScreen": True, "IsRemovable": False, "IgnoreManifestScope": True,
+            "FullScreen": True, "IsRemovable": True, "IgnoreManifestScope": True,
             "Precomposed": True, "Icon": _icon(),
         }],
     }
